@@ -155,7 +155,7 @@ class MemoryStore:
             ).fetchall()
         return [str(row[0]) for row in rows if row and row[0]]
 
-    def has_repeated_objective(self, objective: str) -> bool:
+    def has_repeated_objective(self, objective: str, window: int = 10) -> bool:
         """Check if an objective has been used recently to prevent repetition."""
         with self._connect() as conn:
             cursor = conn.execute(
@@ -164,9 +164,9 @@ class MemoryStore:
                 FROM iterations
                 WHERE objective = ?
                 ORDER BY id DESC
-                LIMIT 1
+                LIMIT ?
                 """,
-                (objective,),
+                (objective, window),
             )
             count = cursor.fetchone()[0]
             return count > 0
