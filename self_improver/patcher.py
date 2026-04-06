@@ -156,8 +156,6 @@ class PatchApplier:
             return False, validation.message
         
         self._write_patch_file(diff_text)
-
-        self._write_patch_file(diff_text)
         result: subprocess.CompletedProcess[str] | None = None
         for attempt in range(max_retries):
             result = self._run_git_apply(["--index", "--whitespace=nowarn", str(self.last_patch_path)])
