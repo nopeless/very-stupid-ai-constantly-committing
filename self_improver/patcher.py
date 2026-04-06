@@ -165,7 +165,10 @@ class PatchApplier:
         self._write_patch_file(diff_text)
         result: subprocess.CompletedProcess[str] | None = None
         for attempt in range(max_retries):
-            result = self._run_git_apply(["--index", "--whitespace=nowarn", str(self.last_patch_path)])
+            try:
+                result = self._run_git_apply(["--index", "--whitespace=nowarn", str(self.last_patch_path)])
+            except subprocess.TimeoutExpired:
+                return False, "git apply timed out."
             if result.returncode == 0:
                 return True, ""
             if attempt < max_retries - 1:
@@ -180,7 +183,10 @@ class PatchApplier:
             return False, "Patch text exceeds maximum allowed size (1MB)."
 
         self._write_patch_file(diff_text)
-        result = self._run_git_apply(["--check", "--index", "--whitespace=nowarn", str(self.last_patch_path)])
+        try:
+            result = self._run_git_apply(["--check", "--index", "--whitespace=nowarn", str(self.last_patch_path)])
+        except subprocess.TimeoutExpired:
+            return False, "git apply --check timed out."
         if result.returncode == 0:
             return True, ""
         return False, (result.stderr or result.stdout or "git apply --check failed").strip()
@@ -188,10 +194,16 @@ class PatchApplier:
     def rollback_last_patch(self) -> tuple[bool, str]:
         if not self.last_patch_path.exists():
             return True, ""
-        result = self._run_git_apply(["-R", "--index", "--whitespace=nowarn", str(self.last_patch_path)])
+        try:
+            result = self._run_git_apply(["-R", "--index", "--whitespace=nowarn", str(self.last_patch_path)])
+        except subprocess.TimeoutExpired:
+            return False, "git apply rollback timed out."
         if result.returncode == 0:
             return True, ""
-        fallback = self._run_git_apply(["-R", "--whitespace=nowarn", str(self.last_patch_path)])
+        try:
+            fallback = self._run_git_apply(["-R", "--whitespace=nowarn", str(self.last_patch_path)])
+        except subprocess.TimeoutExpired:
+            return False, "git apply rollback fallback timed out."
         if fallback.returncode == 0:
             return True, ""
         message = fallback.stderr or fallback.stdout or result.stderr or "rollback failed"
