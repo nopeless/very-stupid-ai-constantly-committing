@@ -137,8 +137,10 @@ class SelfImprovementSupervisor:
 
                 review = self._review_patch(plan, candidate_patch, patch_validation.changed_paths)
                 if not review.approve:
-                    last_patch_error = f"supervisor rejected patch: {review.reason}"
-                    continue
+                    if self._is_hard_reject_reason(review.reason):
+                        last_patch_error = f"supervisor rejected patch: {review.reason}"
+                        continue
+                    LOGGER.warning("review soft-reject ignored: %s", review.reason)
 
                 patch_check_ok, patch_check_error = self.patch_applier.check(candidate_patch)
                 if not patch_check_ok:
@@ -690,6 +692,19 @@ class SelfImprovementSupervisor:
             if not allowed:
                 return False
         return True
+
+    @staticmethod
+    def _is_hard_reject_reason(reason: str) -> bool:
+        text = reason.lower()
+        hard_signals = [
+            "malformed",
+            "invalid diff",
+            "outside allowlist",
+            "path traversal",
+            "syntax error",
+            "broken tests",
+        ]
+        return any(signal in text for signal in hard_signals)
 
     def _review_patch(self, plan: ImprovementPlan, patch_text: str, changed_paths: list[str]) -> ReviewDecision:
         system_prompt = (
