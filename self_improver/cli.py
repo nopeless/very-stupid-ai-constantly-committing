@@ -50,6 +50,7 @@ def main() -> int:
 
     if args.command == "cycle":
         result = supervisor.run_cycle()
+        supervisor.policy.save(config.policy_path)
         print(
             json.dumps(
                 {
