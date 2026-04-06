@@ -109,7 +109,38 @@ def extract_unified_diff(text: str) -> str:
     if start_index is None:
         raise ValueError("No unified diff found in model response.")
 
-    diff = "\n".join(lines[start_index:]).rstrip() + "\n"
+    allowed_prefixes = (
+        "diff --git ",
+        "index ",
+        "--- ",
+        "+++ ",
+        "@@ ",
+        "@@",
+        "new file mode ",
+        "deleted file mode ",
+        "old mode ",
+        "new mode ",
+        "rename from ",
+        "rename to ",
+        "similarity index ",
+        "dissimilarity index ",
+        "Binary files ",
+        "\\ No newline at end of file",
+    )
+    collected: list[str] = []
+    for line in lines[start_index:]:
+        if line == "":
+            collected.append(line)
+            continue
+        if line.startswith(("+", "-", " ")):
+            collected.append(line)
+            continue
+        if line.startswith(allowed_prefixes):
+            collected.append(line)
+            continue
+        break
+
+    diff = "\n".join(collected).rstrip() + "\n"
     if "--- " not in diff or "+++ " not in diff:
         raise ValueError("Diff output is missing unified diff headers.")
     return diff

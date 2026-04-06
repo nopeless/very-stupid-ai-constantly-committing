@@ -133,6 +133,13 @@ class PatchApplier:
             return True, ""
         return False, (result.stderr or result.stdout or "git apply failed").strip()
 
+    def check(self, diff_text: str) -> tuple[bool, str]:
+        self.last_patch_path.write_text(diff_text, encoding="utf-8")
+        result = self._run_git_apply(["--check", "--index", "--whitespace=nowarn", str(self.last_patch_path)])
+        if result.returncode == 0:
+            return True, ""
+        return False, (result.stderr or result.stdout or "git apply --check failed").strip()
+
     def rollback_last_patch(self) -> tuple[bool, str]:
         if not self.last_patch_path.exists():
             return True, ""

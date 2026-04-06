@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import difflib
 import json
 import logging
 import time
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import PurePosixPath
 
 from .config import RuntimeConfig
 from .memory import IterationRecord, MemoryStore
@@ -120,15 +121,31 @@ class SelfImprovementSupervisor:
             plan = self._plan_next_iteration(baseline_report)
             objective = plan.objective
 
-            patch_text = self._generate_patch(plan)
-            patch_validation = self.patch_guard.validate(patch_text)
-            patch_sha256 = patch_validation.patch_sha256
-            if not patch_validation.ok:
-                raise RuntimeError(patch_validation.message)
+            patch_text = ""
+            last_patch_error = ""
+            for _ in range(3):
+                candidate_patch = self._generate_patch(plan)
+                patch_validation = self.patch_guard.validate(candidate_patch)
+                patch_sha256 = patch_validation.patch_sha256
+                if not patch_validation.ok:
+                    last_patch_error = patch_validation.message
+                    continue
 
-            review = self._review_patch(plan, patch_text, patch_validation.changed_paths)
-            if not review.approve:
-                raise RuntimeError(f"supervisor rejected patch: {review.reason}")
+                review = self._review_patch(plan, candidate_patch, patch_validation.changed_paths)
+                if not review.approve:
+                    last_patch_error = f"supervisor rejected patch: {review.reason}"
+                    continue
+
+                patch_check_ok, patch_check_error = self.patch_applier.check(candidate_patch)
+                if not patch_check_ok:
+                    last_patch_error = f"patch check failed: {patch_check_error}"
+                    continue
+
+                patch_text = candidate_patch
+                break
+
+            if not patch_text:
+                raise RuntimeError(f"failed to generate a valid patch: {last_patch_error}")
 
             applied, apply_error = self.patch_applier.apply(patch_text)
             if not applied:
@@ -304,15 +321,32 @@ class SelfImprovementSupervisor:
             f"Repository context:\n{context}"
         )
 
-        text = self.llm.generate(
-            prompt=user_prompt,
-            system=system_prompt,
-            options=OllamaOptions(
-                temperature=self.policy.planner_temperature,
-                num_predict=min(self.policy.num_predict, 2200),
-            ),
-        )
-        payload = extract_json_object(text)
+        payload = {}
+        last_error = ""
+        for _ in range(3):
+            try:
+                text = self.llm.generate(
+                    prompt=user_prompt,
+                    system=system_prompt,
+                    options=OllamaOptions(
+                        temperature=self.policy.planner_temperature,
+                        num_predict=min(self.policy.num_predict, 2200),
+                    ),
+                    json_mode=True,
+                )
+                payload = extract_json_object(text)
+                break
+            except Exception as exc:  # noqa: BLE001
+                last_error = str(exc)
+        if not payload:
+            LOGGER.warning("planner fallback activated: %s", last_error)
+            payload = {
+                "objective": "Increase robustness of prompt parsing and retry logic",
+                "rationale": "Planner output was malformed; improve resilience for perpetual cycles.",
+                "target_files": ["self_improver/supervisor.py", "self_improver/ollama.py", "tests/test_utils.py"],
+                "validation_commands": list(self.config.validate_commands),
+                "success_metric": "Cycle should survive malformed model output.",
+            }
 
         objective = str(payload.get("objective", "")).strip()
         rationale = str(payload.get("rationale", "")).strip()
@@ -350,6 +384,13 @@ class SelfImprovementSupervisor:
         )
 
     def _generate_patch(self, plan: ImprovementPlan) -> str:
+        try:
+            return self._generate_patch_from_structured_edits(plan)
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.warning("structured edit generation failed, falling back to raw diff mode: %s", exc)
+            return self._generate_patch_from_raw_diff(plan)
+
+    def _generate_patch_from_raw_diff(self, plan: ImprovementPlan) -> str:
         file_context = self.repo.read_target_files(plan.target_files, self.config.target_file_context_bytes)
         summary = self.memory.recent_iteration_summary(limit=8)
 
@@ -372,6 +413,47 @@ class SelfImprovementSupervisor:
             f"Current target files:\n{file_context}\n"
         )
 
+        last_error = ""
+        for _ in range(3):
+            try:
+                raw = self.llm.generate(
+                    prompt=user_prompt,
+                    system=system_prompt,
+                    options=OllamaOptions(
+                        temperature=self.policy.coder_temperature,
+                        num_predict=self.policy.num_predict,
+                    ),
+                )
+                return extract_unified_diff(raw)
+            except Exception as exc:  # noqa: BLE001
+                last_error = str(exc)
+        raise RuntimeError(f"coder failed to produce unified diff after retries: {last_error}")
+
+    def _generate_patch_from_structured_edits(self, plan: ImprovementPlan) -> str:
+        if not plan.target_files:
+            raise RuntimeError("structured edit mode requires target_files from planner")
+
+        file_context = self.repo.read_target_files(plan.target_files, self.config.target_file_context_bytes)
+        target_list = [self._normalize_rel_path(path) for path in plan.target_files]
+
+        system_prompt = "You return strict JSON only."
+        user_prompt = (
+            f"Objective: {plan.objective}\n"
+            f"Rationale: {plan.rationale}\n"
+            "Return JSON with this exact shape:\n"
+            "{\n"
+            '  "edits": [\n'
+            '    {"path": "relative/path.py", "content": "FULL FILE CONTENT"}\n'
+            "  ]\n"
+            "}\n\n"
+            "Rules:\n"
+            "- edits must be a subset of target_files\n"
+            "- content must be full file contents after your changes\n"
+            "- only include files you actually changed\n"
+            "- do not include markdown fences or commentary\n\n"
+            f"target_files={json.dumps(target_list)}\n\n"
+            f"Current files:\n{file_context}"
+        )
         raw = self.llm.generate(
             prompt=user_prompt,
             system=system_prompt,
@@ -379,8 +461,59 @@ class SelfImprovementSupervisor:
                 temperature=self.policy.coder_temperature,
                 num_predict=self.policy.num_predict,
             ),
+            json_mode=True,
         )
-        return extract_unified_diff(raw)
+        payload = extract_json_object(raw)
+        edits = payload.get("edits")
+        if not isinstance(edits, list) or not edits:
+            raise RuntimeError("structured edit response did not include any edits")
+
+        patch_chunks: list[str] = []
+        for item in edits:
+            if not isinstance(item, dict):
+                continue
+            path_raw = item.get("path", "")
+            content_raw = item.get("content", "")
+            if not isinstance(path_raw, str) or not isinstance(content_raw, str):
+                continue
+            rel_path = self._normalize_rel_path(path_raw)
+            if rel_path not in target_list:
+                continue
+
+            file_path = (self.config.workspace / rel_path).resolve()
+            if not file_path.exists() or not file_path.is_file():
+                continue
+
+            old_text = file_path.read_text(encoding="utf-8", errors="replace")
+            new_text = content_raw.replace("\r\n", "\n")
+            if old_text == new_text:
+                continue
+
+            old_lines = old_text.splitlines()
+            new_lines = new_text.splitlines()
+            diff_lines = list(
+                difflib.unified_diff(
+                    old_lines,
+                    new_lines,
+                    fromfile=f"a/{rel_path}",
+                    tofile=f"b/{rel_path}",
+                    lineterm="",
+                )
+            )
+            if not diff_lines:
+                continue
+            patch_chunks.append(f"diff --git a/{rel_path} b/{rel_path}")
+            patch_chunks.extend(diff_lines)
+            patch_chunks.append("")
+
+        if not patch_chunks:
+            raise RuntimeError("structured edit response did not produce usable file diffs")
+        return "\n".join(patch_chunks).rstrip() + "\n"
+
+    @staticmethod
+    def _normalize_rel_path(path_value: str) -> str:
+        cleaned = path_value.replace("\\", "/").strip().lstrip("./")
+        return str(PurePosixPath(cleaned))
 
     def _review_patch(self, plan: ImprovementPlan, patch_text: str, changed_paths: list[str]) -> ReviewDecision:
         system_prompt = (
@@ -406,6 +539,7 @@ class SelfImprovementSupervisor:
                     temperature=self.policy.reviewer_temperature,
                     num_predict=500,
                 ),
+                json_mode=True,
             )
             payload = extract_json_object(text)
             approve = bool(payload.get("approve", False))

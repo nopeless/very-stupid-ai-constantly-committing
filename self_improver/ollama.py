@@ -24,6 +24,7 @@ class OllamaClient:
         *,
         system: str = "",
         options: OllamaOptions | None = None,
+        json_mode: bool = False,
         retries: int = 3,
     ) -> str:
         opts = options or OllamaOptions()
@@ -37,6 +38,8 @@ class OllamaClient:
                 "num_predict": opts.num_predict,
             },
         }
+        if json_mode:
+            payload["format"] = "json"
         data = json.dumps(payload).encode("utf-8")
         endpoint = f"{self.base_url}/api/generate"
 
@@ -54,6 +57,8 @@ class OllamaClient:
                     raw = response.read().decode("utf-8")
                 parsed = json.loads(raw)
                 text = parsed.get("response", "")
+                if (not isinstance(text, str)) or (not text.strip()):
+                    text = parsed.get("thinking", "")
                 if not isinstance(text, str):
                     raise RuntimeError("Ollama response did not include text.")
                 return text.strip()
