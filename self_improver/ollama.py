@@ -56,9 +56,23 @@ class OllamaClient:
                 with request.urlopen(req, timeout=self.timeout_seconds) as response:
                     raw = response.read().decode("utf-8")
                 parsed = json.loads(raw)
-                text = parsed.get("response", "")
+                response_text = parsed.get("response", "")
+                thinking_text = parsed.get("thinking", "")
+
+                if isinstance(thinking_text, str) and thinking_text.strip():
+                    print(
+                        f"\n[OLLAMA:{self.model}:thinking]\n{thinking_text.strip()}\n",
+                        flush=True,
+                    )
+                if isinstance(response_text, str) and response_text.strip():
+                    print(
+                        f"\n[OLLAMA:{self.model}:response]\n{response_text.strip()}\n",
+                        flush=True,
+                    )
+
+                text = response_text
                 if (not isinstance(text, str)) or (not text.strip()):
-                    text = parsed.get("thinking", "")
+                    text = thinking_text
                 if not isinstance(text, str):
                     raise RuntimeError("Ollama response did not include text.")
                 return text.strip()
