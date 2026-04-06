@@ -120,6 +120,19 @@ class RepoManager:
             if not full_path.exists() or not full_path.is_file():
                 blocks.append(f"FILE: {path}\n<missing>\n")
                 continue
+            # Normalize path to prevent directory traversal attacks
+            if ".." in path or path.startswith(".."):
+                blocks.append(f"FILE: {path}\n<invalid path>\n")
+                continue
+            # Validate path is within workspace
+            try:
+                normalized_path = (self.workspace / path).resolve()
+                if not normalized_path.is_relative_to(self.workspace):
+                    blocks.append(f"FILE: {path}\n<outside workspace>\n")
+                    continue
+            except ValueError:
+                blocks.append(f"FILE: {path}\n<invalid path>\n")
+                continue
             content = full_path.read_text(encoding="utf-8", errors="replace")
             content = truncate_text(content, max(1_024, budget // max(1, len(target_files))))
             blocks.append(f"FILE: {path}\n{content}\n")
