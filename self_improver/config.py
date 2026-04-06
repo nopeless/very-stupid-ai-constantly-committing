@@ -113,6 +113,12 @@ class RuntimeConfig:
             raise ValueError("allowed_paths cannot be empty")
         if not self.validate_commands:
             raise ValueError("validate_commands cannot be empty")
+        for p in self.allowed_paths:
+            if not p or ".." in p:
+                raise ValueError(f"allowed_paths entry must be a valid relative path: {p}")
+        for cmd in self.validate_commands:
+            if not cmd:
+                raise ValueError("validate_commands cannot contain empty entries")
 
     @classmethod
     def from_optional_file(cls, config_path: str | Path | None = None) -> "RuntimeConfig":
