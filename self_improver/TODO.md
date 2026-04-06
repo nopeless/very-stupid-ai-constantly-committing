@@ -13,7 +13,6 @@
 ## Progress Visibility
 
 ## Resolution Statistics
-- **Total Objectives**: 6
 - **Completed**: 6
 - **Remaining**: 0
 - **Completion Rate**: 100%

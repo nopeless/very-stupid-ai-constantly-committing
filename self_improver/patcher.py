@@ -116,10 +116,19 @@ class PatchGuard:
                 patch_sha256=digest,
             )
         for path in changed:
+            # Defensive path validation: reject absolute paths, path traversal, and non-normalized paths
             if path.startswith("../") or path.startswith("/") or "/../" in path:
                 return PatchValidation(
                     ok=False,
                     message=f"Path traversal is not allowed: {path}",
+                    changed_paths=changed,
+                    patch_sha256=digest,
+                )
+            # Ensure path is normalized and does not escape workspace
+            if not path or path.startswith(".."):
+                return PatchValidation(
+                    ok=False,
+                    message=f"Invalid path format: {path}",
                     changed_paths=changed,
                     patch_sha256=digest,
                 )
