@@ -48,6 +48,25 @@ class TodoQueue:
         self._save_counter()
         return True
 
+    def mark_completed(self, entry: TodoEntry) -> bool:
+        lines = self._read_lines()
+        if entry.line_index < 0 or entry.line_index >= len(lines):
+            return False
+        if lines[entry.line_index] != entry.raw_line:
+            return False
+        
+        # Mark the task as completed by changing state from " " to "x"
+        completed_line = re.sub(
+            r"^[-*]\s+\[(?P<state>[ xX])\]\s*(?P<task>.+)$",
+            lambda m: f"[-*] [{m.group('state') if m.group('state') == 'x' else 'x'}] {m.group('task')}",
+            lines[entry.line_index]
+        )
+        lines[entry.line_index] = completed_line
+        self._write_lines(lines)
+        self._counter += 1
+        self._save_counter()
+        return True
+
     @staticmethod
     def _parse_task_line(line: str) -> str | None:
         text = line.strip()
