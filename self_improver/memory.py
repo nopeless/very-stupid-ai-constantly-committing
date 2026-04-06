@@ -160,4 +160,48 @@ class MemoryStore:
             total = conn.execute("SELECT COUNT(*) FROM iterations").fetchone()[0]
             success = conn.execute("SELECT COUNT(*) FROM iterations WHERE success = 1").fetchone()[0]
         current, peak = tracemalloc.get_traced_memory()
-        return {"total_iterations": int(total), "successful_iterations": int(success), "current_memory_mb": round(current / 1024 / 1024, 2), "peak_memory_mb": round(peak / 1024 / 1024, 2)}
+        return {
+            "total_iterations": int(total),
+            "successful_iterations": int(success),
+            "current_memory_mb": round(current / 1024 / 1024, 2),
+            "peak_memory_mb": round(peak / 1024 / 1024, 2),
+        }
+
+    def development_briefing(self, *, window: int = 20) -> str:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT objective, success, error_message
+                FROM iterations
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (window,),
+            ).fetchall()
+
+        if not rows:
+            return "No prior iterations."
+
+        total = len(rows)
+        successes = sum(1 for _, success, _ in rows if success)
+        success_rate = (100.0 * successes) / total
+
+        failure_reasons: dict[str, int] = {}
+        recent_objectives: list[str] = []
+        for objective, success, error_message in rows:
+            if objective and len(recent_objectives) < 6:
+                recent_objectives.append(str(objective))
+            if success:
+                continue
+            reason = str(error_message or "").strip() or "unknown failure"
+            failure_reasons[reason] = failure_reasons.get(reason, 0) + 1
+
+        top_failures = sorted(failure_reasons.items(), key=lambda item: item[1], reverse=True)[:3]
+        failure_text = ", ".join(f"{count}x {reason}" for reason, count in top_failures) if top_failures else "none"
+        objectives_text = " | ".join(recent_objectives) if recent_objectives else "none"
+
+        return (
+            f"Window={total} iterations; success_rate={success_rate:.1f}%.\n"
+            f"Recent objectives: {objectives_text}\n"
+            f"Top failure reasons: {failure_text}"
+        )

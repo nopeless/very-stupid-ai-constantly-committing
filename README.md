@@ -52,11 +52,11 @@ Environment overrides:
 
 ## TODO Queue
 
-Create `TODO.md` in the repo root and add one task per line.
+Create `self_improver/TODO.md` and add one task per line.
 
 The bot behavior on each cycle:
 
-1. Reads the top actionable entry from `TODO.md`.
+1. Reads the top actionable entry from `self_improver/TODO.md`.
 2. Forces planning to focus on that entry first.
 3. Runs normal validation and acceptance gates.
 4. Removes that top line only when the cycle is accepted (no validation regression).

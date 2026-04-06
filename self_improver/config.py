@@ -11,7 +11,7 @@ DEFAULT_ALLOWED_PATHS = [
     "self_improver",
     "tests",
     "README.md",
-    "TODO.md",
+    "self_improver/TODO.md",
     "pyproject.toml",
     ".gitignore",
 ]
@@ -33,6 +33,7 @@ class RuntimeConfig:
     max_patch_paths: int = 8
     max_patch_hunks: int = 32
     command_timeout_seconds: int = 300
+    ollama_healthcheck_timeout_seconds: int = 5
     cycle_sleep_seconds: int = 15
     planner_context_files: int = 40
     planner_context_bytes: int = 24_000
@@ -42,7 +43,7 @@ class RuntimeConfig:
     max_consecutive_failures_before_cooldown: int = 5
     cooldown_seconds: int = 60
     todo_enabled: bool = True
-    todo_file: str = "TODO.md"
+    todo_file: str = "self_improver/TODO.md"
 
     def __post_init__(self) -> None:
         self.workspace = Path(self.workspace).resolve()

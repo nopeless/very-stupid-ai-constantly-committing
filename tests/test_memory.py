@@ -24,8 +24,10 @@ def test_memory_store_records_iterations(tmp_path: Path) -> None:
     summary = store.recent_iteration_summary(limit=1)
     objectives = store.recent_objectives(limit=1)
     lessons = store.recent_lessons(limit=1)
+    briefing = store.development_briefing(window=5)
 
     assert row_id == 1
     assert "test objective" in summary
     assert objectives == ["test objective"]
     assert lessons == ["small patches pass more reliably"]
+    assert "success_rate" in briefing

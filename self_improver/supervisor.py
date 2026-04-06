@@ -114,16 +114,27 @@ class SelfImprovementSupervisor:
         patch_sha256 = ""
         score_before = 0.0
         score_after = 0.0
+        active_todo: TodoEntry | None = None
+        plan: ImprovementPlan | None = None
+        baseline_json: dict = {}
+        post_json: dict = {}
 
         try:
             if not self.config.allow_dirty_worktree and not self.repo.worktree_is_clean():
                 raise RuntimeError("Worktree is dirty; refusing autonomous edits without allow_dirty_worktree=true.")
+
+            ollama_ok, ollama_message = self.llm.health_check(
+                timeout_seconds=self.config.ollama_healthcheck_timeout_seconds
+            )
+            if not ollama_ok:
+                raise RuntimeError(f"ollama health check failed: {ollama_message}")
 
             active_todo = self._next_todo_entry()
             if active_todo is not None:
                 LOGGER.info("active TODO: %s", active_todo.text)
 
             baseline_report = self.validator.run(self.config.validate_commands)
+            baseline_json = baseline_report.to_json()
             score_before = baseline_report.score
 
             plan = self._plan_next_iteration(baseline_report, forced_todo=active_todo)
@@ -168,6 +179,7 @@ class SelfImprovementSupervisor:
 
             commands = plan.validation_commands or self.config.validate_commands
             post_report = self.validator.run(commands)
+            post_json = post_report.to_json()
             score_after = post_report.score
 
             accepted = self._should_accept_change(baseline_report, post_report)
@@ -203,6 +215,20 @@ class SelfImprovementSupervisor:
                 commit_sha=commit_sha,
                 validation_report=post_report,
             )
+            self._write_cycle_artifact(
+                started_at=started_at,
+                objective=objective,
+                success=True,
+                message=f"commit {commit_sha[:12]}",
+                todo_text=active_todo.text if active_todo is not None else "",
+                plan=plan,
+                patch_sha256=patch_sha256,
+                commit_sha=commit_sha,
+                score_before=score_before,
+                score_after=score_after,
+                baseline_validation=baseline_json,
+                post_validation=post_json,
+            )
             return CycleResult(
                 success=True,
                 message=f"commit {commit_sha[:12]}",
@@ -222,6 +248,20 @@ class SelfImprovementSupervisor:
                 patch_sha256=patch_sha256,
                 commit_sha=commit_sha,
                 error_message=message,
+            )
+            self._write_cycle_artifact(
+                started_at=started_at,
+                objective=objective,
+                success=False,
+                message=message,
+                todo_text=active_todo.text if active_todo is not None else "",
+                plan=plan,
+                patch_sha256=patch_sha256,
+                commit_sha=commit_sha,
+                score_before=score_before,
+                score_after=score_after,
+                baseline_validation=baseline_json,
+                post_validation=post_json,
             )
             self.policy.update_after_iteration(success=False, score_delta=score_after - score_before)
             return CycleResult(
@@ -299,6 +339,54 @@ class SelfImprovementSupervisor:
         )
         self.memory.record_iteration(record)
 
+    def _write_cycle_artifact(
+        self,
+        *,
+        started_at: str,
+        objective: str,
+        success: bool,
+        message: str,
+        todo_text: str,
+        plan: ImprovementPlan | None,
+        patch_sha256: str,
+        commit_sha: str,
+        score_before: float,
+        score_after: float,
+        baseline_validation: dict,
+        post_validation: dict,
+    ) -> None:
+        finished_at = utc_now()
+        payload = {
+            "started_at": started_at,
+            "finished_at": finished_at,
+            "success": success,
+            "message": message,
+            "objective": objective,
+            "todo_text": todo_text,
+            "plan": {
+                "objective": plan.objective,
+                "rationale": plan.rationale,
+                "target_files": plan.target_files,
+                "validation_commands": plan.validation_commands,
+                "success_metric": plan.success_metric,
+                "todo_text": plan.todo_text,
+            }
+            if plan is not None
+            else {},
+            "patch_sha256": patch_sha256,
+            "commit_sha": commit_sha,
+            "score_before": score_before,
+            "score_after": score_after,
+            "baseline_validation": baseline_validation,
+            "post_validation": post_validation,
+        }
+
+        cycles_dir = self.config.logs_dir / "cycles"
+        cycles_dir.mkdir(parents=True, exist_ok=True)
+        safe_timestamp = finished_at.replace(":", "-")
+        artifact_path = cycles_dir / f"{safe_timestamp}.json"
+        artifact_path.write_text(json.dumps(payload, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+
     @staticmethod
     def _build_commit_message(objective: str) -> str:
         objective = objective.strip().replace("\n", " ")
@@ -321,6 +409,7 @@ class SelfImprovementSupervisor:
         iterations = self.memory.recent_iteration_summary(limit=12)
         recent_objectives = self.memory.recent_objectives(limit=12)
         lessons = self.memory.recent_lessons(limit=10)
+        briefing = self.memory.development_briefing(window=24)
 
         lessons_text = "\n".join(f"- {line}" for line in lessons) if lessons else "- none"
         objectives_text = "\n".join(f"- {line}" for line in recent_objectives) if recent_objectives else "- none"
@@ -331,6 +420,7 @@ class SelfImprovementSupervisor:
             f"RECENT ITERATIONS:\n{iterations}\n\n"
             f"RECENT OBJECTIVES:\n{objectives_text}\n\n"
             f"LESSONS:\n{lessons_text}\n\n"
+            f"SESSION BRIEFING:\n{briefing}\n\n"
             f"BASELINE:\n{baseline_json}",
             self.config.planner_context_bytes,
         )
@@ -404,10 +494,10 @@ class SelfImprovementSupervisor:
         if not isinstance(validation_commands, list):
             validation_commands = []
 
-        normalized_targets = []
+        candidate_targets: list[str] = []
         for item in target_files:
             if isinstance(item, str) and item.strip():
-                normalized_targets.append(item.replace("\\", "/").lstrip("./"))
+                candidate_targets.append(item.replace("\\", "/").lstrip("./"))
         normalized_commands = []
         for cmd in validation_commands:
             if isinstance(cmd, str) and cmd.strip():
@@ -424,8 +514,8 @@ class SelfImprovementSupervisor:
         if forced_todo is not None:
             todo_text = forced_todo.text
             objective = f"Resolve TODO: {forced_todo.text}"
-            if not normalized_targets:
-                normalized_targets = self._extract_file_hints_from_text(forced_todo.text)
+            if not candidate_targets:
+                candidate_targets = self._extract_file_hints_from_text(forced_todo.text)
         else:
             duplicate_count = sum(
                 1 for item in recent_objectives if item.strip().lower() == objective.strip().lower()
@@ -433,9 +523,13 @@ class SelfImprovementSupervisor:
             if duplicate_count >= 2:
                 objective = "Diversify planning logic to avoid repeated objectives"
                 rationale = "The same objective repeated in recent cycles; forcing planning diversity."
-                normalized_targets = ["self_improver/supervisor.py", "tests/test_memory.py"]
+                candidate_targets = ["self_improver/supervisor.py", "tests/test_memory.py"]
                 normalized_commands = list(self.config.validate_commands)
                 success_metric = "Consecutive cycles should avoid duplicate objectives."
+
+        normalized_targets = self._sanitize_target_files(candidate_targets)
+        if not normalized_targets:
+            normalized_targets = self._default_target_files()
 
         return ImprovementPlan(
             objective=objective,
@@ -717,6 +811,61 @@ class SelfImprovementSupervisor:
     def _normalize_rel_path(path_value: str) -> str:
         cleaned = path_value.replace("\\", "/").strip().lstrip("./")
         return str(PurePosixPath(cleaned))
+
+    def _path_is_allowed(self, rel_path: str) -> bool:
+        normalized_path = self._normalize_rel_path(rel_path)
+        for allowed in self.config.allowed_paths:
+            allowed_norm = self._normalize_rel_path(allowed)
+            if normalized_path == allowed_norm or normalized_path.startswith(allowed_norm + "/"):
+                return True
+        return False
+
+    def _sanitize_target_files(self, targets: list[str]) -> list[str]:
+        sanitized: list[str] = []
+        seen: set[str] = set()
+        for raw in targets:
+            if not isinstance(raw, str) or not raw.strip():
+                continue
+            normalized = self._normalize_rel_path(raw)
+            if normalized.startswith("../") or normalized.startswith("/") or "/../" in normalized:
+                continue
+            if normalized in seen:
+                continue
+            if not self._path_is_allowed(normalized):
+                continue
+
+            full_path = (self.config.workspace / normalized).resolve()
+            try:
+                full_path.relative_to(self.config.workspace)
+            except ValueError:
+                continue
+
+            # Allow editing existing files; for missing files require an existing parent.
+            if full_path.exists():
+                if not full_path.is_file():
+                    continue
+            else:
+                parent = full_path.parent
+                if not parent.exists() or not parent.is_dir():
+                    continue
+
+            seen.add(normalized)
+            sanitized.append(normalized)
+            if len(sanitized) >= self.config.max_patch_paths:
+                break
+        return sanitized
+
+    def _default_target_files(self) -> list[str]:
+        candidates = [
+            "self_improver/supervisor.py",
+            "self_improver/memory.py",
+            "self_improver/ollama.py",
+            "self_improver/todo.py",
+            "tests/test_utils.py",
+            "tests/test_todo.py",
+        ]
+        existing = [path for path in candidates if (self.config.workspace / path).is_file()]
+        return self._sanitize_target_files(existing)[:4]
 
     @staticmethod
     def _extract_file_hints_from_text(text: str) -> list[str]:

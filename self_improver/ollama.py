@@ -18,6 +18,17 @@ class OllamaClient:
         self.model = model
         self.timeout_seconds = timeout_seconds
 
+    def health_check(self, timeout_seconds: int = 5) -> tuple[bool, str]:
+        endpoint = f"{self.base_url}/api/tags"
+        try:
+            req = request.Request(endpoint, method="GET")
+            with request.urlopen(req, timeout=timeout_seconds) as response:
+                if response.status >= 400:
+                    return False, f"http_status={response.status}"
+            return True, "ok"
+        except (error.URLError, error.HTTPError, TimeoutError) as exc:
+            return False, str(exc)
+
     def generate(
         self,
         prompt: str,
