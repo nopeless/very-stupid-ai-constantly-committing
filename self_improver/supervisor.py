@@ -135,7 +135,6 @@ class SelfImprovementSupervisor:
 
         # Rotate planning strategy to avoid repeated objectives
         self._planning_strategy = self._select_planning_strategy()
-        self._planning_strategy = self._select_planning_strategy()
 
         try:
             dirty_sha = self._checkpoint_dirty_worktree("cycle-start")
