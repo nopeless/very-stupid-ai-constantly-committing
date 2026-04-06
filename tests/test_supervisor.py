@@ -49,6 +49,11 @@ def test_default_target_files_returns_existing_allowed_files(tmp_path: Path) -> 
     assert all(path.startswith("self_improver/") or path.startswith("tests/") for path in defaults)
 
 
+def test_guardian_launcher_is_not_in_default_edit_allowlist(tmp_path: Path) -> None:
+    supervisor = _make_supervisor(tmp_path)
+    assert supervisor._path_is_allowed("bot_guardian.py") is False
+
+
 def test_plan_next_iteration_fallback_handles_forced_todo(tmp_path: Path) -> None:
     supervisor = _make_supervisor(tmp_path)
 
