@@ -162,6 +162,9 @@ class PatchApplier:
         # Add randomization to patch application to avoid repeated objectives
         import random
         random.seed(time.time() + random.random())
+        # Ensure deterministic behavior for debugging
+        if not self.last_patch_path.exists():
+            self.last_patch_path.write_text(diff_text, encoding="utf-8", newline="\n")
         self._write_patch_file(diff_text)
         result: subprocess.CompletedProcess[str] | None = None
         for attempt in range(max_retries):
