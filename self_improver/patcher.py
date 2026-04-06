@@ -152,6 +152,8 @@ class PatchApplier:
                 return True, ""
             if attempt < max_retries - 1:
                 time.sleep(base_delay * (2 ** attempt))
+            if result.returncode == -1 or result.returncode == 124:
+                return False, f"Patch apply timed out on attempt {attempt + 1}."
         assert result is not None
         return False, (result.stderr or result.stdout or "git apply failed").strip()
 
@@ -165,6 +167,8 @@ class PatchApplier:
         result = self._run_git_apply(["--check", "--index", "--whitespace=nowarn", str(self.last_patch_path)])
         if result.returncode == 0:
             return True, ""
+        if result.returncode == -1 or result.returncode == 124:
+            return False, "Patch check timed out."
         return False, (result.stderr or result.stdout or "git apply --check failed").strip()
 
     def rollback_last_patch(self) -> tuple[bool, str]:
@@ -177,4 +181,6 @@ class PatchApplier:
         if fallback.returncode == 0:
             return True, ""
         message = fallback.stderr or fallback.stdout or result.stderr or "rollback failed"
+        if result.returncode == -1 or result.returncode == 124 or fallback.returncode == -1 or fallback.returncode == 124:
+            message = "Rollback timed out."
         return False, message.strip()
