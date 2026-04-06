@@ -71,6 +71,7 @@ class AdaptivePolicy:
             return
         self._record_objective(objective)
         self.unique_objectives_completed += 1
+        self.success_streak += 1
 
     def get_objective_history(self) -> set[str]:
         """Return set of completed objectives."""
