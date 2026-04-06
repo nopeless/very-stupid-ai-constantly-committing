@@ -22,11 +22,13 @@ class PatchGuard:
         max_patch_bytes: int,
         max_patch_paths: int,
         max_patch_hunks: int,
+        max_repeated_objectives: int = 3,
     ) -> None:
         self.allowed_paths = [self._normalize_path(item) for item in allowed_paths]
         self.max_patch_bytes = max_patch_bytes
         self.max_patch_paths = max_patch_paths
         self.max_patch_hunks = max_patch_hunks
+        self.max_repeated_objectives = max_repeated_objectives
 
     @staticmethod
     def _normalize_path(path: str) -> str:
@@ -53,7 +55,7 @@ class PatchGuard:
                         right = right[2:]
                     if right != "/dev/null":
                         paths.add(right)
-            elif line.startswith("+++ b/"):
+            elif line.startswith("+\+\+ b/"):
                 path = line[6:].strip()
                 if path != "/dev/null":
                     paths.add(path)
@@ -123,6 +125,7 @@ class PatchApplier:
         self.state_dir = state_dir
         self.state_dir.mkdir(parents=True, exist_ok=True)
         self.last_patch_path = self.state_dir / "last.patch"
+        self.objective_history: list[str] = []
 
     def _run_git_apply(self, args: list[str]) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -166,3 +169,36 @@ class PatchApplier:
             return True, ""
         message = fallback.stderr or fallback.stdout or result.stderr or "rollback failed"
         return False, message.strip()
+
+    def _extract_objective_from_diff(self, diff_text: str) -> str:
+        """Extract a high-level objective description from the diff."""
+        lines = diff_text.splitlines()
+        for line in lines:
+            if line.startswith("+" + "=" * 20) or line.startswith("+" + "#"):
+                # Look for comments or headers that might describe the objective
+                if "objective" in line.lower() or "goal" in line.lower() or "purpose" in line.lower():
+                    return line.strip()
+        # Fallback: use first non-empty line that looks like a description
+        for line in lines:
+            if line.strip() and not line.startswith("diff") and not line.startswith("@@") and not line.startswith("+") and not line.startswith("-"):
+                return line.strip()
+        return ""
+
+    def _is_objective_repeated(self, objective: str) -> bool:
+        """Check if the objective has been repeated too many times recently."""
+        objective_lower = objective.lower()
+        recent_objectives = self.objective_history[-self.max_repeated_objectives:]
+        for recent in recent_objectives:
+            if objective_lower in recent.lower() or recent.lower() in objective_lower:
+                return True
+        return False
+
+    def apply_with_diversity_check(self, diff_text: str) -> tuple[bool, str]:
+        """Apply patch but reject if objective is too similar to recent ones."""
+        objective = self._extract_objective_from_diff(diff_text)
+        if objective and self._is_objective_repeated(objective):
+            return False, f"Objective appears too similar to recent objectives: {objective}"
+        success, message = self.apply(diff_text)
+        if success and objective:
+            self.objective_history.append(objective)
+        return success, message
