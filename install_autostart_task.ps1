@@ -5,7 +5,7 @@ param(
 )
 
 $workdir = (Get-Location).Path
-$runCmd = "cd `"$workdir`"; $PythonExe -m self_improver run --config `"$ConfigPath`""
+$runCmd = "cd `"$workdir`"; $PythonExe .\bot_guardian.py --config `"$ConfigPath`""
 
 $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -WindowStyle Hidden -Command $runCmd"
 $trigger = New-ScheduledTaskTrigger -AtStartup

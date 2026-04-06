@@ -26,13 +26,13 @@ python -m self_improver cycle
 Run perpetual mode:
 
 ```powershell
-python -m self_improver run
+python .\bot_guardian.py
 ```
 
 Run N cycles:
 
 ```powershell
-python -m self_improver run --cycles 20
+python .\bot_guardian.py --cycles 20
 ```
 
 ## Configuration
@@ -41,7 +41,7 @@ Copy and edit config:
 
 ```powershell
 Copy-Item config.example.json config.json
-python -m self_improver run --config config.json
+python .\bot_guardian.py --config config.json
 ```
 
 Environment overrides:
@@ -88,10 +88,12 @@ Ignored lines:
 
 Use a process manager so the loop is self-sufficient across restarts. Example with PowerShell scheduled task is recommended for Windows.
 
+`bot_guardian.py` is a root-level launcher outside the bot's default editable allowlist. It starts a fresh `python -m self_improver cycle` subprocess every iteration so code updates take effect immediately on the next cycle.
+
 Manual background loop:
 
 ```powershell
-Start-Process -FilePath "python" -ArgumentList "-m self_improver run --config config.json" -NoNewWindow
+Start-Process -FilePath "python" -ArgumentList ".\bot_guardian.py --config config.json" -NoNewWindow
 ```
 
 Auto-start at boot (Windows Task Scheduler):
