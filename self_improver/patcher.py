@@ -136,15 +136,19 @@ class PatchApplier:
             text=True,
         )
 
-    def apply(self, diff_text: str) -> tuple[bool, str]:
+    def apply(self, diff_text: str, max_retries: int = 3, base_delay: float = 0.1) -> tuple[bool, str]:
         if not diff_text or not isinstance(diff_text, str):
             return False, "Patch text must be a non-empty string."
         if len(diff_text) > 1024 * 1024:
             return False, "Patch text exceeds maximum allowed size (1MB)."
         self.last_patch_path.write_text(diff_text, encoding="utf-8", newline="\n")
-        result = self._run_git_apply(["--index", "--whitespace=nowarn", str(self.last_patch_path)])
-        if result.returncode == 0:
-            return True, ""
+        for attempt in range(max_retries):
+            result = self._run_git_apply(["--index", "--whitespace=nowarn", str(self.last_patch_path)])
+            if result.returncode == 0:
+                return True, ""
+            if attempt < max_retries - 1:
+                delay = base_delay * (2 ** attempt)
+                time.sleep(delay)
         return False, (result.stderr or result.stdout or "git apply failed").strip()
 
     def check(self, diff_text: str) -> tuple[bool, str]:
