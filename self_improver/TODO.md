@@ -15,7 +15,6 @@
 ## Progress Visibility
 
 ## Resolution Statistics
-- **Remaining**: 0
 - **Completion Rate**: 100%
 
 ## Notes

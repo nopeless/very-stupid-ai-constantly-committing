@@ -141,6 +141,107 @@ class PatchGuard:
                 )
         return PatchValidation(ok=True, message="ok", changed_paths=changed, patch_sha256=digest)
 
+    def _validate_syntax(self, diff_text: str) -> bool:
+        """Pre-generation validation to catch malformed code and syntax errors."""
+        try:
+            # Check for basic syntax issues like unmatched brackets/parentheses
+            open_braces = diff_text.count("{") - diff_text.count("}")
+            open_parens = diff_text.count("(") - diff_text.count(")")
+            open_brackets = diff_text.count("[") - diff_text.count("]")
+            if open_braces != 0 or open_parens != 0 or open_brackets != 0:
+                return False
+            # Check for common Python syntax errors in diff context
+            lines = diff_text.splitlines()
+            for line in lines:
+                if line.startswith("@@"):
+                    continue
+                # Skip context and hunk header lines
+                if line.startswith("- ") or line.startswith("+ ") or line.startswith("@@") or line.startswith("diff") or line.startswith("index") or line.startswith("new file") or line.startswith("deleted"):
+                    continue
+                # Check for unclosed strings or quotes in non-comment lines
+                if line.strip() and not line.strip().startswith("#"):
+                    # Simple check for unmatched quotes
+                    single_quotes = line.count("'")
+                    double_quotes = line.count('"')
+                    if (single_quotes % 2 != 0) or (double_quotes % 2 != 0):
+                        return False
+            return True
+        except Exception:
+            return False
+
+    def validate(self, diff_text: str) -> PatchValidation:
+        if not diff_text or not isinstance(diff_text, str):
+            return PatchValidation(
+                ok=False,
+                message="Patch text must be a non-empty string.",
+                changed_paths=[],
+                patch_sha256="",
+            )
+        if not self._validate_syntax(diff_text):
+            return PatchValidation(
+                ok=False,
+                message="Patch contains syntax errors or malformed code.",
+                changed_paths=[],
+                patch_sha256="",
+            )
+        digest = hashlib.sha256(diff_text.encode("utf-8", errors="replace")).hexdigest()
+        size = len(diff_text.encode("utf-8", errors="replace"))
+        if size > self.max_patch_bytes:
+            return PatchValidation(
+                ok=False,
+                message=f"Patch too large ({size} bytes > {self.max_patch_bytes} bytes).",
+                changed_paths=[],
+                patch_sha256=digest,
+            )
+        hunk_count = sum(1 for line in diff_text.splitlines() if line.startswith("@@"))
+        if hunk_count > self.max_patch_hunks:
+            return PatchValidation(
+                ok=False,
+                message=f"Patch has too many hunks ({hunk_count} > {self.max_patch_hunks}).",
+                changed_paths=[],
+                patch_sha256=digest,
+            )
+        changed = [self._normalize_path(p) for p in self._extract_changed_paths(diff_text)]
+        if not changed:
+            return PatchValidation(
+                ok=False,
+                message="Patch does not include any changed paths.",
+                changed_paths=[],
+                patch_sha256=digest,
+            )
+        if len(changed) > self.max_patch_paths:
+            return PatchValidation(
+                ok=False,
+                message=f"Patch touches too many files ({len(changed)} > {self.max_patch_paths}).",
+                changed_paths=changed,
+                patch_sha256=digest,
+            )
+        for path in changed:
+            # Defensive path validation: reject absolute paths, path traversal, and non-normalized paths
+            if path.startswith("../") or path.startswith("/") or "/../" in path:
+                return PatchValidation(
+                    ok=False,
+                    message=f"Path traversal is not allowed: {path}",
+                    changed_paths=changed,
+                    patch_sha256=digest,
+                )
+            # Ensure path is normalized and does not escape workspace
+            if not path or path.startswith(".."):
+                return PatchValidation(
+                    ok=False,
+                    message=f"Invalid path format: {path}",
+                    changed_paths=changed,
+                    patch_sha256=digest,
+                )
+            if not self._is_allowed(path):
+                return PatchValidation(
+                    ok=False,
+                    message=f"Path is outside allowlist: {path}",
+                    changed_paths=changed,
+                    patch_sha256=digest,
+                )
+        return PatchValidation(ok=True, message="ok", changed_paths=changed, patch_sha256=digest)
+
 
 class PatchApplier:
     def __init__(self, workspace: Path, state_dir: Path) -> None:
