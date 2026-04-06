@@ -9,6 +9,7 @@
 - [x] [Prevent duplicate work on already-resolved items]
 - [x] [Improve self-documentation]
 - [x] [Help prioritize remaining TODOs]
+- [x] [Add TODO resolution tracking to prevent duplicate objectives and ensure progress is recorded]
 
 ## Pending Objectives
 
