@@ -118,8 +118,8 @@ class SelfImprovementSupervisor:
         baseline_json: dict = {}
         post_json: dict = {}
 
-        # Initialize duplicate tracking
-        self._duplicate_objective_cache = set()
+        # Initialize diversity tracking
+        self._diversity_cache = set()
         started_at = utc_now()
         objective = "unplanned"
         commit_sha = ""
