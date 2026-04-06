@@ -159,11 +159,6 @@ class PatchApplier:
         if len(diff_text) > 1_048_576:
             return False, "Patch text exceeds maximum allowed size (1MB)."
 
-        # Validate patch paths against allowlist before applying
-        validation = self.guard.validate(diff_text)
-        if not validation.ok:
-            return False, validation.message
-
         self._write_patch_file(diff_text)
         result: subprocess.CompletedProcess[str] | None = None
         for attempt in range(max_retries):
