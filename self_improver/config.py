@@ -53,6 +53,7 @@ class RuntimeConfig:
         self.validate_commands = [c.strip() for c in self.validate_commands if c and c.strip()]
         if not self.validate_commands:
             self.validate_commands = list(DEFAULT_VALIDATE_COMMANDS)
+        self._validate_runtime_config()
 
     def _resolve_under_workspace(self, path_value: str | Path) -> Path:
         path = Path(path_value)
@@ -80,6 +81,38 @@ class RuntimeConfig:
     @property
     def todo_path(self) -> Path:
         return self._resolve_under_workspace(self.todo_file)
+
+    def _validate_runtime_config(self) -> None:
+        if self.max_patch_bytes <= 0:
+            raise ValueError("max_patch_bytes must be positive")
+        if self.max_patch_paths <= 0:
+            raise ValueError("max_patch_paths must be positive")
+        if self.max_patch_hunks <= 0:
+            raise ValueError("max_patch_hunks must be positive")
+        if self.command_timeout_seconds <= 0:
+            raise ValueError("command_timeout_seconds must be positive")
+        if self.ollama_healthcheck_timeout_seconds <= 0:
+            raise ValueError("ollama_healthcheck_timeout_seconds must be positive")
+        if self.cycle_sleep_seconds <= 0:
+            raise ValueError("cycle_sleep_seconds must be positive")
+        if self.planner_context_files <= 0:
+            raise ValueError("planner_context_files must be positive")
+        if self.planner_context_bytes <= 0:
+            raise ValueError("planner_context_bytes must be positive")
+        if self.target_file_context_bytes <= 0:
+            raise ValueError("target_file_context_bytes must be positive")
+        if self.max_consecutive_failures_before_cooldown <= 0:
+            raise ValueError("max_consecutive_failures_before_cooldown must be positive")
+        if self.cooldown_seconds <= 0:
+            raise ValueError("cooldown_seconds must be positive")
+        if not self.model:
+            raise ValueError("model cannot be empty")
+        if not self.ollama_base_url:
+            raise ValueError("ollama_base_url cannot be empty")
+        if not self.allowed_paths:
+            raise ValueError("allowed_paths cannot be empty")
+        if not self.validate_commands:
+            raise ValueError("validate_commands cannot be empty")
 
     @classmethod
     def from_optional_file(cls, config_path: str | Path | None = None) -> "RuntimeConfig":
