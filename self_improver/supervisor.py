@@ -3,6 +3,7 @@ from __future__ import annotations
 import difflib
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass
 from pathlib import PurePosixPath
@@ -385,10 +386,90 @@ class SelfImprovementSupervisor:
 
     def _generate_patch(self, plan: ImprovementPlan) -> str:
         try:
-            return self._generate_patch_from_structured_edits(plan)
-        except Exception as exc:  # noqa: BLE001
-            LOGGER.warning("structured edit generation failed, falling back to raw diff mode: %s", exc)
-            return self._generate_patch_from_raw_diff(plan)
+            return self._generate_patch_from_replacements(plan)
+        except Exception as repl_exc:  # noqa: BLE001
+            LOGGER.warning("replacement generation failed, trying file-block mode: %s", repl_exc)
+            try:
+                return self._generate_patch_from_file_blocks(plan)
+            except Exception as block_exc:  # noqa: BLE001
+                LOGGER.warning("file-block generation failed, trying structured JSON mode: %s", block_exc)
+                try:
+                    return self._generate_patch_from_structured_edits(plan)
+                except Exception as json_exc:  # noqa: BLE001
+                    LOGGER.warning("structured edit generation failed, falling back to raw diff mode: %s", json_exc)
+                    return self._generate_patch_from_raw_diff(plan)
+
+    def _generate_patch_from_replacements(self, plan: ImprovementPlan) -> str:
+        if not plan.target_files:
+            raise RuntimeError("replacement mode requires target_files from planner")
+
+        file_context = self.repo.read_target_files(plan.target_files, self.config.target_file_context_bytes)
+        target_list = [self._normalize_rel_path(path) for path in plan.target_files]
+
+        system_prompt = "You return strict JSON only."
+        user_prompt = (
+            f"Objective: {plan.objective}\n"
+            f"Rationale: {plan.rationale}\n"
+            "Return JSON with this exact shape:\n"
+            "{\n"
+            '  "replacements": [\n'
+            '    {"path": "relative/path.py", "find": "exact old snippet", "replace": "new snippet"}\n'
+            "  ]\n"
+            "}\n\n"
+            "Rules:\n"
+            "- path must be one of target_files\n"
+            "- keep each find snippet short and exact\n"
+            "- use \\n for newlines inside snippets\n"
+            "- include only replacements necessary for the objective\n"
+            "- no markdown or prose\n\n"
+            f"target_files={json.dumps(target_list)}\n\n"
+            f"Current files:\n{file_context}"
+        )
+        raw = self.llm.generate(
+            prompt=user_prompt,
+            system=system_prompt,
+            options=OllamaOptions(
+                temperature=self.policy.coder_temperature,
+                num_predict=min(self.policy.num_predict, 1800),
+            ),
+            json_mode=True,
+        )
+        payload = extract_json_object(raw)
+        replacements = payload.get("replacements")
+        if not isinstance(replacements, list) or not replacements:
+            raise RuntimeError("replacement response did not include any replacements")
+
+        updated_content: dict[str, str] = {}
+        for rel_path in target_list:
+            file_path = (self.config.workspace / rel_path).resolve()
+            if not file_path.exists() or not file_path.is_file():
+                continue
+            updated_content[rel_path] = file_path.read_text(encoding="utf-8", errors="replace")
+
+        changed_paths: set[str] = set()
+        for item in replacements:
+            if not isinstance(item, dict):
+                continue
+            path_raw = item.get("path", "")
+            find_raw = item.get("find", "")
+            replace_raw = item.get("replace", "")
+            if not isinstance(path_raw, str) or not isinstance(find_raw, str) or not isinstance(replace_raw, str):
+                continue
+            rel_path = self._normalize_rel_path(path_raw)
+            if rel_path not in updated_content:
+                continue
+
+            source = updated_content[rel_path]
+            if find_raw not in source:
+                continue
+            updated_content[rel_path] = source.replace(find_raw, replace_raw, 1)
+            changed_paths.add(rel_path)
+
+        if not changed_paths:
+            raise RuntimeError("replacement edits did not match current files")
+
+        edits = [(path, updated_content[path]) for path in sorted(changed_paths)]
+        return self._build_patch_from_content_edits(edits)
 
     def _generate_patch_from_raw_diff(self, plan: ImprovementPlan) -> str:
         file_context = self.repo.read_target_files(plan.target_files, self.config.target_file_context_bytes)
@@ -468,7 +549,7 @@ class SelfImprovementSupervisor:
         if not isinstance(edits, list) or not edits:
             raise RuntimeError("structured edit response did not include any edits")
 
-        patch_chunks: list[str] = []
+        edits_to_apply: list[tuple[str, str]] = []
         for item in edits:
             if not isinstance(item, dict):
                 continue
@@ -484,11 +565,72 @@ class SelfImprovementSupervisor:
             if not file_path.exists() or not file_path.is_file():
                 continue
 
-            old_text = file_path.read_text(encoding="utf-8", errors="replace")
             new_text = content_raw.replace("\r\n", "\n")
+            edits_to_apply.append((rel_path, new_text))
+
+        if not edits_to_apply:
+            raise RuntimeError("structured edit response did not produce usable file diffs")
+        return self._build_patch_from_content_edits(edits_to_apply)
+
+    def _generate_patch_from_file_blocks(self, plan: ImprovementPlan) -> str:
+        if not plan.target_files:
+            raise RuntimeError("file-block mode requires target_files from planner")
+
+        file_context = self.repo.read_target_files(plan.target_files, self.config.target_file_context_bytes)
+        target_list = [self._normalize_rel_path(path) for path in plan.target_files]
+
+        system_prompt = "You rewrite files and return only file blocks."
+        user_prompt = (
+            f"Objective: {plan.objective}\n"
+            f"Rationale: {plan.rationale}\n"
+            "Return one or more blocks in this exact format:\n"
+            "<<<FILE:relative/path.py>>>\n"
+            "FULL FILE CONTENT\n"
+            "<<<END FILE>>>\n\n"
+            "Rules:\n"
+            "- path must be one of target_files\n"
+            "- content must be complete final file text\n"
+            "- output only these blocks, no prose\n\n"
+            f"target_files={json.dumps(target_list)}\n\n"
+            f"Current files:\n{file_context}"
+        )
+        raw = self.llm.generate(
+            prompt=user_prompt,
+            system=system_prompt,
+            options=OllamaOptions(
+                temperature=self.policy.coder_temperature,
+                num_predict=self.policy.num_predict,
+            ),
+        )
+
+        pattern = re.compile(r"<<<FILE:(?P<path>[^>]+)>>>\s*\n(?P<content>.*?)\n<<<END FILE>>>", re.DOTALL)
+        matches = list(pattern.finditer(raw))
+        if not matches:
+            raise RuntimeError("no file blocks found in model response")
+
+        edits: list[tuple[str, str]] = []
+        for match in matches:
+            path_raw = match.group("path")
+            content_raw = match.group("content")
+            rel_path = self._normalize_rel_path(path_raw)
+            if rel_path not in target_list:
+                continue
+            edits.append((rel_path, content_raw.replace("\r\n", "\n")))
+
+        if not edits:
+            raise RuntimeError("file blocks did not include allowed target files")
+
+        return self._build_patch_from_content_edits(edits)
+
+    def _build_patch_from_content_edits(self, edits: list[tuple[str, str]]) -> str:
+        patch_chunks: list[str] = []
+        for rel_path, new_text in edits:
+            file_path = (self.config.workspace / rel_path).resolve()
+            if not file_path.exists() or not file_path.is_file():
+                continue
+            old_text = file_path.read_text(encoding="utf-8", errors="replace")
             if old_text == new_text:
                 continue
-
             old_lines = old_text.splitlines()
             new_lines = new_text.splitlines()
             diff_lines = list(
@@ -505,9 +647,8 @@ class SelfImprovementSupervisor:
             patch_chunks.append(f"diff --git a/{rel_path} b/{rel_path}")
             patch_chunks.extend(diff_lines)
             patch_chunks.append("")
-
         if not patch_chunks:
-            raise RuntimeError("structured edit response did not produce usable file diffs")
+            raise RuntimeError("candidate edits did not produce any changes")
         return "\n".join(patch_chunks).rstrip() + "\n"
 
     @staticmethod

@@ -127,14 +127,14 @@ class PatchApplier:
         )
 
     def apply(self, diff_text: str) -> tuple[bool, str]:
-        self.last_patch_path.write_text(diff_text, encoding="utf-8")
+        self.last_patch_path.write_text(diff_text, encoding="utf-8", newline="\n")
         result = self._run_git_apply(["--index", "--whitespace=nowarn", str(self.last_patch_path)])
         if result.returncode == 0:
             return True, ""
         return False, (result.stderr or result.stdout or "git apply failed").strip()
 
     def check(self, diff_text: str) -> tuple[bool, str]:
-        self.last_patch_path.write_text(diff_text, encoding="utf-8")
+        self.last_patch_path.write_text(diff_text, encoding="utf-8", newline="\n")
         result = self._run_git_apply(["--check", "--index", "--whitespace=nowarn", str(self.last_patch_path)])
         if result.returncode == 0:
             return True, ""
