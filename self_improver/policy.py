@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -16,6 +17,11 @@ class AdaptivePolicy:
     num_predict: int = 2800
     max_patch_bytes: int = 64_000
     unique_objectives_completed: int = 0
+    completed_objective_hashes: set[str] = None
+
+    def __post_init__(self):
+        if self.completed_objective_hashes is None:
+            self.completed_objective_hashes = set()
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), ensure_ascii=True, indent=2)
@@ -47,29 +53,32 @@ class AdaptivePolicy:
             self.coder_temperature = max(0.05, self.coder_temperature - 0.03)
             self.max_patch_bytes = max(16_000, self.max_patch_bytes - 3_000)
 
-    def _get_completed_objectives(self) -> set[str]:
-        """Return set of completed objective strings from history."""
+    def _get_completed_objective_hashes(self) -> set[str]:
+        """Return set of completed objective hashes from history."""
         history_path = Path(__file__).parent / "objective_history.json"
         if not history_path.exists():
             return set()
         try:
-            return set(json.loads(history_path.read_text(encoding="utf-8")).get("objectives", []))
+            return set(json.loads(history_path.read_text(encoding="utf-8")).get("objective_hashes", []))
         except (json.JSONDecodeError, KeyError):
             return set()
 
-    def _record_objective(self, objective: str) -> None:
-        """Record an objective to history file."""
+    def _record_objective_hash(self, objective: str) -> None:
+        """Record an objective hash to history file."""
         history_path = Path(__file__).parent / "objective_history.json"
-        history = self._get_completed_objectives()
-        history.add(objective)
+        history = self._get_completed_objective_hashes()
+        objective_hash = hash(objective)
+        history.add(objective_hash)
         history_path.parent.mkdir(parents=True, exist_ok=True)
-        history_path.write_text(json.dumps({"objectives": list(history)}, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        history_path.write_text(json.dumps({"objective_hashes": list(history)}, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
     def mark_objective_complete(self, objective: str) -> None:
         """Mark an objective as complete to prevent re-generation."""
-        if objective in self.get_objective_history():
+        objective_hash = hash(objective)
+        if objective_hash in self.completed_objective_hashes:
             return
-        self._record_objective(objective)
+        self._record_objective_hash(objective)
+        self.completed_objective_hashes.add(objective_hash)
         self.unique_objectives_completed += 1
         self.success_streak += 1
         self.failure_streak = 0
@@ -77,6 +86,8 @@ class AdaptivePolicy:
         LOGGER.info("unique objective completed: %s", objective)
 
     def get_objective_history(self) -> set[str]:
-        """Return set of completed objectives."""
-        return self._get_completed_objectives()
+        """Return set of completed objective hashes."""
+        return self._get_completed_objective_hashes()
 
+
+LOGGER = logging.getLogger(__name__)
