@@ -66,6 +66,8 @@ class AdaptivePolicy:
 
     def mark_objective_complete(self, objective: str) -> None:
         """Mark an objective as complete to prevent re-generation."""
+        if objective in self.get_objective_history():
+            return
         self._record_objective(objective)
 
     def get_objective_history(self) -> set[str]:
