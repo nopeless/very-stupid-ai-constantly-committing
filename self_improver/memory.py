@@ -167,6 +167,13 @@ class MemoryStore:
             "peak_memory_mb": round(peak / 1024 / 1024, 2),
         }
 
+    def get_memory_threshold(self) -> int:
+        return 512  # MB threshold for circuit breaker
+
+    def is_memory_safe(self) -> bool:
+        current, _ = tracemalloc.get_traced_memory()
+        return current / 1024 / 1024 < self.get_memory_threshold()
+
     def development_briefing(self, *, window: int = 20) -> str:
         with self._connect() as conn:
             rows = conn.execute(

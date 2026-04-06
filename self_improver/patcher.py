@@ -23,11 +23,16 @@ class PatchGuard:
         max_patch_bytes: int,
         max_patch_paths: int,
         max_patch_hunks: int,
+        memory_threshold_mb: int = 512,
     ) -> None:
         self.allowed_paths = [self._normalize_path(item) for item in allowed_paths]
         self.max_patch_bytes = max_patch_bytes
         self.max_patch_paths = max_patch_paths
         self.max_patch_hunks = max_patch_hunks
+        self.memory_threshold_mb = memory_threshold_mb
+        self._failure_count = 0
+        self._reset_time = 0
+        self._failure_window = 60  # seconds
 
     @staticmethod
     def _normalize_path(path: str) -> str:
@@ -59,6 +64,16 @@ class PatchGuard:
                 if path != "/dev/null":
                     paths.add(path)
         return sorted(paths)
+
+    def _check_memory(self) -> bool:
+        import tracemalloc
+        current, _ = tracemalloc.get_traced_memory()
+        return current / 1024 / 1024 < self.memory_threshold_mb
+
+    def _reset_circuit(self) -> None:
+        import time
+        if time.time() - self._reset_time > self._failure_window:
+            self._failure_count = 0
 
     def validate(self, diff_text: str) -> PatchValidation:
         if not diff_text or not isinstance(diff_text, str):
