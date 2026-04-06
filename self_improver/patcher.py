@@ -83,6 +83,13 @@ class PatchGuard:
                 changed_paths=[],
                 patch_sha256="",
             )
+        if not self._validate_syntax(diff_text):
+            return PatchValidation(
+                ok=False,
+                message="Patch contains syntax errors or malformed code.",
+                changed_paths=[],
+                patch_sha256="",
+            )
         digest = hashlib.sha256(diff_text.encode("utf-8", errors="replace")).hexdigest()
         size = len(diff_text.encode("utf-8", errors="replace"))
         if size > self.max_patch_bytes:
