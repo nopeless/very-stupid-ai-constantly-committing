@@ -117,6 +117,8 @@ class SelfImprovementSupervisor:
         plan: ImprovementPlan | None = None
         baseline_json: dict = {}
         post_json: dict = {}
+        # Track completed objectives to prevent duplicates
+        completed_objectives: set[str] = set()
 
         # Initialize diversity tracking
         self._diversity_cache = set()
