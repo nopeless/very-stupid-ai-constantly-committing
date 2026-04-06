@@ -36,6 +36,9 @@ class TodoQueue:
                 return TodoEntry(line_index=index, raw_line=line, text=text)
         return None
 
+    def _get_completed_count(self) -> int:
+        return self._counter
+
     def remove_entry(self, entry: TodoEntry) -> bool:
         lines = self._read_lines()
         if entry.line_index < 0 or entry.line_index >= len(lines):
