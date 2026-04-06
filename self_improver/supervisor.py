@@ -290,12 +290,19 @@ class SelfImprovementSupervisor:
     def _plan_next_iteration(self, baseline_report: ValidationReport) -> ImprovementPlan:
         file_tree = self.repo.build_file_tree_snapshot(self.config.planner_context_files)
         iterations = self.memory.recent_iteration_summary(limit=12)
+        recent_objectives = self.memory.recent_objectives(limit=12)
         lessons = self.memory.recent_lessons(limit=10)
 
         lessons_text = "\n".join(f"- {line}" for line in lessons) if lessons else "- none"
+        objectives_text = "\n".join(f"- {line}" for line in recent_objectives) if recent_objectives else "- none"
         baseline_json = json.dumps(baseline_report.to_json(), ensure_ascii=True, indent=2)
         context = truncate_text(
-            f"FILE TREE:\n{file_tree}\n\nRECENT ITERATIONS:\n{iterations}\n\nLESSONS:\n{lessons_text}\n\nBASELINE:\n{baseline_json}",
+            "FILE TREE:\n"
+            f"{file_tree}\n\n"
+            f"RECENT ITERATIONS:\n{iterations}\n\n"
+            f"RECENT OBJECTIVES:\n{objectives_text}\n\n"
+            f"LESSONS:\n{lessons_text}\n\n"
+            f"BASELINE:\n{baseline_json}",
             self.config.planner_context_bytes,
         )
 
@@ -375,6 +382,16 @@ class SelfImprovementSupervisor:
             rationale = "Fallback rationale because planner response was incomplete."
         if not success_metric:
             success_metric = "Validation score must not regress."
+
+        duplicate_count = sum(
+            1 for item in recent_objectives if item.strip().lower() == objective.strip().lower()
+        )
+        if duplicate_count >= 2:
+            objective = "Diversify planning logic to avoid repeated objectives"
+            rationale = "The same objective repeated in recent cycles; forcing planning diversity."
+            target_files = ["self_improver/supervisor.py", "tests/test_memory.py"]
+            validation_commands = list(self.config.validate_commands)
+            success_metric = "Consecutive cycles should avoid duplicate objectives."
 
         return ImprovementPlan(
             objective=objective,

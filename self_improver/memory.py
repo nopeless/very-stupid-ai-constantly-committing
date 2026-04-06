@@ -140,6 +140,19 @@ class MemoryStore:
             )
         return "\n".join(lines)
 
+    def recent_objectives(self, limit: int = 12) -> list[str]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT objective
+                FROM iterations
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [str(row[0]) for row in rows if row and row[0]]
+
     def stats(self) -> dict[str, int]:
         with self._connect() as conn:
             total = conn.execute("SELECT COUNT(*) FROM iterations").fetchone()[0]
