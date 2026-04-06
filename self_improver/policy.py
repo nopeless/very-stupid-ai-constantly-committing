@@ -15,6 +15,7 @@ class AdaptivePolicy:
     reviewer_temperature: float = 0.10
     num_predict: int = 2800
     max_patch_bytes: int = 64_000
+    unique_objectives_completed: int = 0
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), ensure_ascii=True, indent=2)
@@ -69,7 +70,9 @@ class AdaptivePolicy:
         if objective in self.get_objective_history():
             return
         self._record_objective(objective)
+        self.unique_objectives_completed += 1
 
     def get_objective_history(self) -> set[str]:
         """Return set of completed objectives."""
         return self._get_completed_objectives()
+
