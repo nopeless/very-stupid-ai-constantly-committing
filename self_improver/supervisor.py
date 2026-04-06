@@ -14,6 +14,7 @@ from .ollama import OllamaClient, OllamaOptions
 from .patcher import PatchApplier, PatchGuard
 from .policy import AdaptivePolicy
 from .repo import RepoManager
+from .todo import TodoEntry, TodoQueue
 from .utils import extract_json_object, extract_unified_diff, truncate_text, utc_now
 from .validator import ValidationReport, Validator
 
@@ -28,6 +29,7 @@ class ImprovementPlan:
     target_files: list[str]
     validation_commands: list[str]
     success_metric: str
+    todo_text: str = ""
 
 
 @dataclass
@@ -64,6 +66,7 @@ class SelfImprovementSupervisor:
             max_patch_hunks=self.config.max_patch_hunks,
         )
         self.patch_applier = PatchApplier(self.config.workspace, self.config.state_dir)
+        self.todo_queue = TodoQueue(self.config.todo_path)
         self.llm = OllamaClient(self.config.ollama_base_url, self.config.model)
 
     def bootstrap(self) -> None:
@@ -81,14 +84,14 @@ class SelfImprovementSupervisor:
         consecutive_failures = 0
         while max_cycles is None or cycle < max_cycles:
             cycle += 1
-            LOGGER.info("starting cycle %d", cycle, objective=objective)
+            LOGGER.info("starting cycle %d", cycle)
             result = self.run_cycle()
             if result.success:
                 consecutive_failures = 0
-                LOGGER.info("cycle %d succeeded: %s", cycle, result.message, objective=objective)
+                LOGGER.info("cycle %d succeeded: %s", cycle, result.message)
             else:
                 consecutive_failures += 1
-                LOGGER.warning("cycle %d failed: %s", cycle, result.message, objective=objective)
+                LOGGER.warning("cycle %d failed: %s", cycle, result.message)
 
             self.policy.save(self.config.policy_path)
 
@@ -116,13 +119,18 @@ class SelfImprovementSupervisor:
             if not self.config.allow_dirty_worktree and not self.repo.worktree_is_clean():
                 raise RuntimeError("Worktree is dirty; refusing autonomous edits without allow_dirty_worktree=true.")
 
+            active_todo = self._next_todo_entry()
+            if active_todo is not None:
+                LOGGER.info("active TODO: %s", active_todo.text)
+
             baseline_report = self.validator.run(self.config.validate_commands)
             score_before = baseline_report.score
 
-            plan = self._plan_next_iteration(baseline_report)
+            plan = self._plan_next_iteration(baseline_report, forced_todo=active_todo)
             objective = plan.objective
 
             patch_text = ""
+            selected_paths: list[str] = []
             last_patch_error = ""
             for _ in range(3):
                 candidate_patch = self._generate_patch(plan)
@@ -140,7 +148,7 @@ class SelfImprovementSupervisor:
                     if self._is_hard_reject_reason(review.reason):
                         last_patch_error = f"supervisor rejected patch: {review.reason}"
                         continue
-                    LOGGER.warning("review soft-reject ignored: %s", review.reason, objective=objective)
+                    LOGGER.warning("review soft-reject ignored: %s", review.reason)
 
                 patch_check_ok, patch_check_error = self.patch_applier.check(candidate_patch)
                 if not patch_check_ok:
@@ -148,6 +156,7 @@ class SelfImprovementSupervisor:
                     continue
 
                 patch_text = candidate_patch
+                selected_paths = patch_validation.changed_paths
                 break
 
             if not patch_text:
@@ -169,6 +178,16 @@ class SelfImprovementSupervisor:
                         f"validation failed and rollback failed. manual repair required: {rollback_error}"
                     )
                 raise RuntimeError("validation regression detected")
+
+            if active_todo is not None:
+                if self._todo_resolved(active_todo, plan, selected_paths, post_report):
+                    removed = self.todo_queue.remove_entry(active_todo)
+                    if removed:
+                        LOGGER.info("resolved TODO and removed top entry: %s", active_todo.text)
+                    else:
+                        LOGGER.warning("TODO changed during cycle; skipping removal: %s", active_todo.text)
+                else:
+                    LOGGER.info("TODO kept in queue (not resolved): %s", active_todo.text)
 
             commit_sha = self.repo.commit_all(self._build_commit_message(plan.objective))
             if not commit_sha:
@@ -241,6 +260,7 @@ class SelfImprovementSupervisor:
                 "target_files": plan.target_files,
                 "validation_commands": plan.validation_commands,
                 "success_metric": plan.success_metric,
+                "todo_text": plan.todo_text,
             },
             validation_json=validation_report.to_json(),
             patch_sha256=patch_sha256,
@@ -292,7 +312,11 @@ class SelfImprovementSupervisor:
             return False
         return after.score >= before.score
 
-    def _plan_next_iteration(self, baseline_report: ValidationReport) -> ImprovementPlan:
+    def _plan_next_iteration(
+        self,
+        baseline_report: ValidationReport,
+        forced_todo: TodoEntry | None = None,
+    ) -> ImprovementPlan:
         file_tree = self.repo.build_file_tree_snapshot(self.config.planner_context_files)
         iterations = self.memory.recent_iteration_summary(limit=12)
         recent_objectives = self.memory.recent_objectives(limit=12)
@@ -310,6 +334,13 @@ class SelfImprovementSupervisor:
             f"BASELINE:\n{baseline_json}",
             self.config.planner_context_bytes,
         )
+        todo_requirement = ""
+        if forced_todo is not None:
+            todo_requirement = (
+                "Top TODO entry to resolve this cycle:\n"
+                f"- {forced_todo.text}\n\n"
+                "Your plan must resolve this TODO item directly.\n"
+            )
 
         system_prompt = (
             "You are a software-improvement planner. "
@@ -331,6 +362,7 @@ class SelfImprovementSupervisor:
             '  "validation_commands": ["python -m pytest -q"],\n'
             '  "success_metric": "string"\n'
             "}\n\n"
+            f"{todo_requirement}"
             f"Repository context:\n{context}"
         )
 
@@ -352,7 +384,7 @@ class SelfImprovementSupervisor:
             except Exception as exc:  # noqa: BLE001
                 last_error = str(exc)
         if not payload:
-            LOGGER.warning("planner fallback activated: %s", last_error, objective=objective)
+            LOGGER.warning("planner fallback activated: %s", last_error)
             payload = {
                 "objective": "Increase robustness of prompt parsing and retry logic",
                 "rationale": "Planner output was malformed; improve resilience for perpetual cycles.",
@@ -388,15 +420,22 @@ class SelfImprovementSupervisor:
         if not success_metric:
             success_metric = "Validation score must not regress."
 
-        duplicate_count = sum(
-            1 for item in recent_objectives if item.strip().lower() == objective.strip().lower()
-        )
-        if duplicate_count >= 2:
-            objective = "Diversify planning logic to avoid repeated objectives"
-            rationale = "The same objective repeated in recent cycles; forcing planning diversity."
-            target_files = ["self_improver/supervisor.py", "tests/test_memory.py"]
-            validation_commands = list(self.config.validate_commands)
-            success_metric = "Consecutive cycles should avoid duplicate objectives."
+        todo_text = ""
+        if forced_todo is not None:
+            todo_text = forced_todo.text
+            objective = f"Resolve TODO: {forced_todo.text}"
+            if not normalized_targets:
+                normalized_targets = self._extract_file_hints_from_text(forced_todo.text)
+        else:
+            duplicate_count = sum(
+                1 for item in recent_objectives if item.strip().lower() == objective.strip().lower()
+            )
+            if duplicate_count >= 2:
+                objective = "Diversify planning logic to avoid repeated objectives"
+                rationale = "The same objective repeated in recent cycles; forcing planning diversity."
+                normalized_targets = ["self_improver/supervisor.py", "tests/test_memory.py"]
+                normalized_commands = list(self.config.validate_commands)
+                success_metric = "Consecutive cycles should avoid duplicate objectives."
 
         return ImprovementPlan(
             objective=objective,
@@ -404,6 +443,7 @@ class SelfImprovementSupervisor:
             target_files=normalized_targets,
             validation_commands=normalized_commands,
             success_metric=success_metric,
+            todo_text=todo_text,
         )
 
     def _generate_patch(self, plan: ImprovementPlan) -> str:
@@ -678,6 +718,36 @@ class SelfImprovementSupervisor:
         cleaned = path_value.replace("\\", "/").strip().lstrip("./")
         return str(PurePosixPath(cleaned))
 
+    @staticmethod
+    def _extract_file_hints_from_text(text: str) -> list[str]:
+        hints = re.findall(r"([A-Za-z0-9_./-]+\.[A-Za-z0-9_]+)", text)
+        normalized = [item.replace("\\", "/").lstrip("./") for item in hints]
+        unique: list[str] = []
+        for item in normalized:
+            if item not in unique:
+                unique.append(item)
+        return unique[:8]
+
+    def _next_todo_entry(self) -> TodoEntry | None:
+        if not self.config.todo_enabled:
+            return None
+        return self.todo_queue.peek()
+
+    @staticmethod
+    def _todo_resolved(
+        entry: TodoEntry,
+        plan: ImprovementPlan,
+        changed_paths: list[str],
+        validation_report: ValidationReport,
+    ) -> bool:
+        if not validation_report.passed:
+            return False
+        if not changed_paths:
+            return False
+        if plan.todo_text.strip().lower() == entry.text.strip().lower():
+            return True
+        return entry.text.strip().lower() in plan.objective.strip().lower()
+
     def _paths_within_targets(self, changed_paths: list[str], target_files: list[str]) -> bool:
         if not target_files:
             return True
@@ -746,13 +816,20 @@ class SelfImprovementSupervisor:
         return f"Objective '{plan.objective}' reduced reliability; keep patches smaller and add focused tests."
 
     def status(self) -> dict:
+        todo_entry = self._next_todo_entry()
         return {
             "config": {
                 "workspace": str(self.config.workspace),
                 "model": self.config.model,
                 "ollama_base_url": self.config.ollama_base_url,
+                "todo_file": str(self.config.todo_path),
+                "todo_enabled": self.config.todo_enabled,
             },
             "memory": self.memory.stats(),
             "policy": json.loads(self.policy.to_json()),
             "git_status": self.repo.status_short(),
+            "todo": {
+                "next": todo_entry.text if todo_entry is not None else "",
+                "has_items": todo_entry is not None,
+            },
         }

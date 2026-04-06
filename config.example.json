@@ -5,6 +5,7 @@
     "self_improver",
     "tests",
     "README.md",
+    "TODO.md",
     "pyproject.toml",
     ".gitignore"
   ],
@@ -22,5 +23,7 @@
   "allow_dirty_worktree": false,
   "auto_init_git": true,
   "max_consecutive_failures_before_cooldown": 5,
-  "cooldown_seconds": 60
+  "cooldown_seconds": 60,
+  "todo_enabled": true,
+  "todo_file": "TODO.md"
 }

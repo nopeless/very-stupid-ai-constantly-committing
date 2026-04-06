@@ -11,6 +11,7 @@ DEFAULT_ALLOWED_PATHS = [
     "self_improver",
     "tests",
     "README.md",
+    "TODO.md",
     "pyproject.toml",
     ".gitignore",
 ]
@@ -40,6 +41,8 @@ class RuntimeConfig:
     auto_init_git: bool = True
     max_consecutive_failures_before_cooldown: int = 5
     cooldown_seconds: int = 60
+    todo_enabled: bool = True
+    todo_file: str = "TODO.md"
 
     def __post_init__(self) -> None:
         self.workspace = Path(self.workspace).resolve()
@@ -71,6 +74,10 @@ class RuntimeConfig:
     @property
     def logs_dir(self) -> Path:
         return self.state_dir / "logs"
+
+    @property
+    def todo_path(self) -> Path:
+        return self._resolve_under_workspace(self.todo_file)
 
     @classmethod
     def from_optional_file(cls, config_path: str | Path | None = None) -> "RuntimeConfig":

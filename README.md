@@ -50,6 +50,30 @@ Environment overrides:
 - `OLLAMA_BASE_URL` override Ollama URL
 - `OLLAMA_MODEL` override model name
 
+## TODO Queue
+
+Create `TODO.md` in the repo root and add one task per line.
+
+The bot behavior on each cycle:
+
+1. Reads the top actionable entry from `TODO.md`.
+2. Forces planning to focus on that entry first.
+3. Runs normal validation and acceptance gates.
+4. Removes that top line only when the cycle is accepted (no validation regression).
+
+Supported task line styles:
+
+- plain text line
+- `- task`
+- `1. task`
+- `- [ ] task`
+
+Ignored lines:
+
+- empty lines
+- markdown headings (`# ...`)
+- checked boxes (`- [x] done`)
+
 ## Supervisor Safety Model
 
 - Patch scope restricted by `allowed_paths`.
