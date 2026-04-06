@@ -35,6 +35,14 @@ class Validator:
         self.timeout_seconds = timeout_seconds
 
     def run(self, commands: list[str]) -> ValidationReport:
+        # Validate input commands to prevent malformed patches
+        if not isinstance(commands, list):
+            raise ValueError("commands must be a list")
+        for command in commands:
+            if not isinstance(command, str):
+                raise ValueError("each command must be a string")
+            if not command.strip():
+                raise ValueError("commands cannot be empty")
         outcomes: list[CommandOutcome] = []
         for command in commands:
             outcomes.append(
