@@ -4,7 +4,11 @@
 - [x] [Add resolution counter to TODO.md]
 
 ## Pending Objectives
-- [ ] [Provide visibility into progress]
+- [x] [Provide visibility into progress]
+
+## Progress Visibility
+- **Active Objectives**: 4
+- **Last Updated**: 2024-01-15
 - [ ] [Prevent duplicate work on already-resolved items]
 - [ ] [Improve self-documentation]
 - [ ] [Help prioritize remaining TODOs]
