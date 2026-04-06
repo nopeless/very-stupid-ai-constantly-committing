@@ -10,7 +10,6 @@
 ## Pending Objectives
 
 ## Progress Visibility
-- **Last Updated**: 2024-01-15
 
 ## Resolution Statistics
 - **Total Objectives**: 6
