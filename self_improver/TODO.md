@@ -12,6 +12,8 @@
 
 ## Pending Objectives
 
+- [ ] [Resolve TODO: Mark items as completed when fully resolved]
+
 ## Progress Visibility
 
 ## Resolution Statistics
