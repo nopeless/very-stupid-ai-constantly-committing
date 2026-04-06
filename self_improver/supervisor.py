@@ -131,6 +131,9 @@ class SelfImprovementSupervisor:
                 if not patch_validation.ok:
                     last_patch_error = patch_validation.message
                     continue
+                if not self._paths_within_targets(patch_validation.changed_paths, plan.target_files):
+                    last_patch_error = "patch touched files outside planner target_files"
+                    continue
 
                 review = self._review_patch(plan, candidate_patch, patch_validation.changed_paths)
                 if not review.approve:
@@ -672,6 +675,21 @@ class SelfImprovementSupervisor:
     def _normalize_rel_path(path_value: str) -> str:
         cleaned = path_value.replace("\\", "/").strip().lstrip("./")
         return str(PurePosixPath(cleaned))
+
+    def _paths_within_targets(self, changed_paths: list[str], target_files: list[str]) -> bool:
+        if not target_files:
+            return True
+        normalized_targets = [self._normalize_rel_path(path) for path in target_files]
+        for changed in changed_paths:
+            changed_norm = self._normalize_rel_path(changed)
+            allowed = False
+            for target in normalized_targets:
+                if changed_norm == target or changed_norm.startswith(target + "/"):
+                    allowed = True
+                    break
+            if not allowed:
+                return False
+        return True
 
     def _review_patch(self, plan: ImprovementPlan, patch_text: str, changed_paths: list[str]) -> ReviewDecision:
         system_prompt = (
