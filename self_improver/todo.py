@@ -15,6 +15,19 @@ class TodoEntry:
 class TodoQueue:
     def __init__(self, path: Path) -> None:
         self.path = path
+        self._counter_path = path.with_name(f"{path.stem}_counter.txt")
+        self._counter = self._load_counter()
+
+    def _load_counter(self) -> int:
+        try:
+            if self._counter_path.exists():
+                return int(self._counter_path.read_text(encoding="utf-8").strip())
+        except (ValueError, FileNotFoundError):
+            pass
+        return 0
+
+    def _save_counter(self) -> None:
+        self._counter_path.write_text(str(self._counter), encoding="utf-8")
 
     def peek(self) -> TodoEntry | None:
         for index, line in enumerate(self._read_lines()):
@@ -31,6 +44,8 @@ class TodoQueue:
             return False
         del lines[entry.line_index]
         self._write_lines(lines)
+        self._counter += 1
+        self._save_counter()
         return True
 
     @staticmethod
