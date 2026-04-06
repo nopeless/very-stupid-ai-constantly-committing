@@ -133,6 +133,9 @@ class SelfImprovementSupervisor:
         baseline_json: dict = {}
         post_json: dict = {}
 
+        # Rotate planning strategy to avoid repeated objectives
+        self._planning_strategy = self._select_planning_strategy()
+
         try:
             # Introduce diversity by rotating planning strategies
             self._planning_strategy = self._select_planning_strategy()
