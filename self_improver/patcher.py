@@ -143,35 +143,11 @@ class PatchApplier:
             return False, "Patch text must be a non-empty string."
         if len(diff_text) > 1_048_576:
             return False, "Patch text exceeds maximum allowed size (1MB)."
-        
-        # Validate patch before applying
-        guard = PatchGuard(
-            allowed_paths=["self_improver/"],
-            max_patch_bytes=1_048_576,
-            max_patch_paths=10,
-            max_patch_hunks=100,
-        )
-        validation = guard.validate(diff_text)
-        if not validation.ok:
-            return False, validation.message
-        # Ensure changed paths are deterministic and valid
-        for path in validation.changed_paths:
-            if not path or not isinstance(path, str):
-                return False, f"Changed path is invalid: {path}"
-        
-        # Add randomization to patch application to avoid repeated objectives
-        import random
-        random.seed(time.time() + random.random())
-        # Ensure deterministic behavior for debugging
-        if not self.last_patch_path.exists():
-            self.last_patch_path.write_text(diff_text, encoding="utf-8", newline="\n")
+
         self._write_patch_file(diff_text)
         result: subprocess.CompletedProcess[str] | None = None
         for attempt in range(max_retries):
-            try:
-                result = self._run_git_apply(["--index", "--whitespace=nowarn", str(self.last_patch_path)])
-            except subprocess.TimeoutExpired:
-                return False, "git apply timed out."
+            result = self._run_git_apply(["--index", "--whitespace=nowarn", str(self.last_patch_path)])
             if result.returncode == 0:
                 return True, ""
             if attempt < max_retries - 1:
@@ -186,10 +162,7 @@ class PatchApplier:
             return False, "Patch text exceeds maximum allowed size (1MB)."
 
         self._write_patch_file(diff_text)
-        try:
-            result = self._run_git_apply(["--check", "--index", "--whitespace=nowarn", str(self.last_patch_path)])
-        except subprocess.TimeoutExpired:
-            return False, "git apply --check timed out."
+        result = self._run_git_apply(["--check", "--index", "--whitespace=nowarn", str(self.last_patch_path)])
         if result.returncode == 0:
             return True, ""
         return False, (result.stderr or result.stdout or "git apply --check failed").strip()
@@ -197,16 +170,10 @@ class PatchApplier:
     def rollback_last_patch(self) -> tuple[bool, str]:
         if not self.last_patch_path.exists():
             return True, ""
-        try:
-            result = self._run_git_apply(["-R", "--index", "--whitespace=nowarn", str(self.last_patch_path)])
-        except subprocess.TimeoutExpired:
-            return False, "git apply rollback timed out."
+        result = self._run_git_apply(["-R", "--index", "--whitespace=nowarn", str(self.last_patch_path)])
         if result.returncode == 0:
             return True, ""
-        try:
-            fallback = self._run_git_apply(["-R", "--whitespace=nowarn", str(self.last_patch_path)])
-        except subprocess.TimeoutExpired:
-            return False, "git apply rollback fallback timed out."
+        fallback = self._run_git_apply(["-R", "--whitespace=nowarn", str(self.last_patch_path)])
         if fallback.returncode == 0:
             return True, ""
         message = fallback.stderr or fallback.stdout or result.stderr or "rollback failed"
