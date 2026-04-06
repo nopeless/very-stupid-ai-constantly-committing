@@ -154,6 +154,10 @@ class PatchApplier:
         validation = guard.validate(diff_text)
         if not validation.ok:
             return False, validation.message
+        # Ensure changed paths are deterministic and valid
+        for path in validation.changed_paths:
+            if not path or not isinstance(path, str):
+                return False, f"Changed path is invalid: {path}"
         
         self._write_patch_file(diff_text)
         result: subprocess.CompletedProcess[str] | None = None
