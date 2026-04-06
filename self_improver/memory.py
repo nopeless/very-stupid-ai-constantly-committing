@@ -155,6 +155,22 @@ class MemoryStore:
             ).fetchall()
         return [str(row[0]) for row in rows if row and row[0]]
 
+    def has_repeated_objective(self, objective: str) -> bool:
+        """Check if an objective has been used recently to prevent repetition."""
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM iterations
+                WHERE objective = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (objective,),
+            )
+            count = cursor.fetchone()[0]
+            return count > 0
+
     def stats(self) -> dict[str, int]:
         with self._connect() as conn:
             total = conn.execute("SELECT COUNT(*) FROM iterations").fetchone()[0]
