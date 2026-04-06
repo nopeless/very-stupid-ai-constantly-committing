@@ -201,7 +201,32 @@ class MemoryStore:
         objectives_text = " | ".join(recent_objectives) if recent_objectives else "none"
 
         return (
-            f"Window={total} iterations; success_rate={success_rate:.1f}%.\n"
+            f"Window={total} iterations; success_rate={success_rate:.1f}%\n"
             f"Recent objectives: {objectives_text}\n"
             f"Top failure reasons: {failure_text}"
         )
+
+    def persist_session_state(self, state_path: Path) -> None:
+        """Persist key metrics and recent objectives to a JSON file for session continuity."""
+        state = {
+            "stats": self.stats(),
+            "recent_objectives": self.recent_objectives(limit=12),
+            "recent_lessons": self.recent_lessons(limit=8),
+            "development_briefing": self.development_briefing(window=20),
+        }
+        with open(state_path, "w") as f:
+            json.dump(state, f, indent=2)
+
+    def load_session_state(self, state_path: Path) -> dict:
+        """Load session state from a JSON file to restore context across sessions."""
+        if not state_path.exists():
+            return {}
+        with open(state_path, "r") as f:
+            return json.load(f)
+
+    def inject_briefing_into_prompt(self, prompt: str, briefing: str) -> str:
+        """Inject a concise development briefing into planner prompts."""
+        if not briefing:
+            return prompt
+        return f"{prompt}\n\n--- Development Briefing ---\n{briefing}"
+

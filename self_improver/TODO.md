@@ -1,4 +1,3 @@
-read persistent memory across sessions and inject a concise development briefing into planner prompts
 add a pre-cycle Ollama health check with clear failure handling and diagnostic status
 write per-cycle JSON artifacts (plan, validation, outcome, error) for postmortem debugging
 strengthen target-file normalization/filtering so planner output always yields safe actionable targets
