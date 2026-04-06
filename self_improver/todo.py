@@ -17,6 +17,7 @@ class TodoQueue:
         self.path = path
         self._counter_path = path.with_name(f"{path.stem}_counter.txt")
         self._counter = self._load_counter()
+        self._completed_objectives = set()
 
     def _load_counter(self) -> int:
         try:
@@ -25,6 +26,17 @@ class TodoQueue:
         except (ValueError, FileNotFoundError):
             pass
         return 0
+
+    def _load_objectives(self) -> set[str]:
+        try:
+            if self._counter_path.with_name(f"{self._counter_path.stem}_objectives.txt").exists():
+                return set(self._counter_path.with_name(f"{self._counter_path.stem}_objectives.txt").read_text(encoding="utf-8").strip().split("\n"))
+        except (ValueError, FileNotFoundError):
+            pass
+        return set()
+
+    def _save_objectives(self, objectives: set[str]) -> None:
+        self._counter_path.with_name(f"{self._counter_path.stem}_objectives.txt").write_text("\n".join(objectives), encoding="utf-8")
 
     def _save_counter(self) -> None:
         self._counter_path.write_text(str(self._counter), encoding="utf-8")
@@ -38,6 +50,13 @@ class TodoQueue:
 
     def _get_completed_count(self) -> int:
         return self._counter
+
+    def get_completed_objectives(self) -> set[str]:
+        return self._completed_objectives
+
+    def mark_objective_completed(self, objective: str) -> None:
+        self._completed_objectives.add(objective)
+        self._save_objectives(self._completed_objectives)
 
     def _get_total_count(self) -> int:
         return len(self._read_lines())
