@@ -39,6 +39,16 @@ class TodoQueue:
     def _get_completed_count(self) -> int:
         return self._counter
 
+    def _get_total_count(self) -> int:
+        return len(self._read_lines())
+
+    def get_completion_rate(self) -> float:
+        total = self._get_total_count()
+        completed = self._get_completed_count()
+        if total == 0:
+            return 0.0
+        return completed / total
+
     def remove_entry(self, entry: TodoEntry) -> bool:
         lines = self._read_lines()
         if entry.line_index < 0 or entry.line_index >= len(lines):
