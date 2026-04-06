@@ -43,6 +43,12 @@ class Validator:
                 raise ValueError("each command must be a string")
             if not command.strip():
                 raise ValueError("commands cannot be empty")
+            # Validate command length to prevent excessively long commands
+            if len(command) > 10000:
+                raise ValueError("command exceeds maximum length of 10000 characters")
+            # Validate command does not contain null bytes or invalid characters
+            if "\x00" in command:
+                raise ValueError("command contains null bytes")
         outcomes: list[CommandOutcome] = []
         for command in commands:
             outcomes.append(
