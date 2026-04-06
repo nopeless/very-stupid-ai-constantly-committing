@@ -78,6 +78,7 @@ class RepoManager:
         if not status.stdout.strip():
             return ""
         commit = self._run_git(["commit", "-m", message])
+        self._run_git(["push"])
         if not commit.ok:
             raise RuntimeError(f"Commit failed: {commit.stderr}")
         sha = self._run_git(["rev-parse", "HEAD"])
