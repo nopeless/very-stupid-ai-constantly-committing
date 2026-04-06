@@ -60,6 +60,13 @@ class PatchGuard:
         return sorted(paths)
 
     def validate(self, diff_text: str) -> PatchValidation:
+        if not diff_text or not isinstance(diff_text, str):
+            return PatchValidation(
+                ok=False,
+                message="Patch text must be a non-empty string.",
+                changed_paths=[],
+                patch_sha256="",
+            )
         digest = hashlib.sha256(diff_text.encode("utf-8", errors="replace")).hexdigest()
         size = len(diff_text.encode("utf-8", errors="replace"))
         if size > self.max_patch_bytes:
