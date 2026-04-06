@@ -137,10 +137,6 @@ class SelfImprovementSupervisor:
         self._planning_strategy = self._select_planning_strategy()
         self._diversity_cache.add(objective)
 
-        # Rotate planning strategy to avoid repeated objectives
-        self._planning_strategy = self._select_planning_strategy()
-        self._diversity_cache.add(objective)
-
         try:
             dirty_sha = self._checkpoint_dirty_worktree("cycle-start")
             if dirty_sha:
