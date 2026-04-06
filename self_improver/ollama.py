@@ -61,14 +61,18 @@ class OllamaClient:
 
                 if isinstance(thinking_text, str) and thinking_text.strip():
                     print(
-                        f"\n[OLLAMA:{self.model}:thinking]\n{thinking_text.strip()}\n",
+                        f"\n[OLLAMA:{self.model}:thinking]\n",
                         flush=True,
                     )
+                    for line in thinking_text.strip().split("\n"):
+                        print(f"  {line}", flush=True)
                 if isinstance(response_text, str) and response_text.strip():
                     print(
-                        f"\n[OLLAMA:{self.model}:response]\n{response_text.strip()}\n",
+                        f"\n[OLLAMA:{self.model}:response]\n",
                         flush=True,
                     )
+                    for line in response_text.strip().split("\n"):
+                        print(f"  {line}", flush=True)
 
                 text = response_text
                 if (not isinstance(text, str)) or (not text.strip()):
