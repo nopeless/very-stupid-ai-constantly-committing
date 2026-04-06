@@ -39,3 +39,16 @@ def test_remove_entry_fails_when_line_changed(tmp_path: Path) -> None:
     todo.write_text("- task one changed\n", encoding="utf-8")
     removed = queue.remove_entry(TodoEntry(entry.line_index, entry.raw_line, entry.text))
     assert removed is False
+
+
+def test_peek_supports_numbered_and_bullet_formats(tmp_path: Path) -> None:
+    todo = tmp_path / "TODO.md"
+    todo.write_text(
+        "# queue\n\n- [x] done\n1. first numbered\n- second bullet\n",
+        encoding="utf-8",
+    )
+    queue = TodoQueue(todo)
+    entry = queue.peek()
+
+    assert entry is not None
+    assert entry.text == "first numbered"

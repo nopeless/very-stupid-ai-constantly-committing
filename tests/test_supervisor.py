@@ -1,8 +1,9 @@
 from pathlib import Path
 
 from self_improver.config import RuntimeConfig
-from self_improver.supervisor import SelfImprovementSupervisor
+from self_improver.supervisor import ImprovementPlan, SelfImprovementSupervisor
 from self_improver.todo import TodoEntry
+from self_improver.utils import CommandOutcome
 from self_improver.validator import ValidationReport
 
 
@@ -66,3 +67,67 @@ def test_plan_next_iteration_fallback_handles_forced_todo(tmp_path: Path) -> Non
     assert plan.objective.startswith("Resolve TODO:")
     assert plan.todo_text == "fix parser in self_improver/ollama.py"
     assert plan.target_files
+
+
+def test_plan_next_iteration_sanitizes_invalid_planner_targets(tmp_path: Path) -> None:
+    supervisor = _make_supervisor(tmp_path)
+
+    supervisor.llm.generate = lambda *args, **kwargs: (
+        '{"objective":"o","rationale":"r","target_files":["../bad.py","tests/test_utils.py"],'
+        '"validation_commands":["python -m pytest -q"],"success_metric":"m"}'
+    )  # type: ignore[assignment]
+
+    plan = supervisor._plan_next_iteration(ValidationReport(commands=[]))
+    assert plan.target_files == ["tests/test_utils.py"]
+
+
+def test_todo_resolved_requires_passing_validation(tmp_path: Path) -> None:
+    supervisor = _make_supervisor(tmp_path)
+    entry = TodoEntry(0, "task", "task")
+    plan = ImprovementPlan(
+        objective="Resolve TODO: task",
+        rationale="r",
+        target_files=["tests/test_utils.py"],
+        validation_commands=["python -m pytest -q"],
+        success_metric="m",
+        todo_text="task",
+    )
+
+    failing_report = ValidationReport(
+        commands=[
+            CommandOutcome(
+                command="pytest",
+                exit_code=1,
+                stdout="",
+                stderr="failed",
+                duration_seconds=0.1,
+            )
+        ]
+    )
+    passing_report = ValidationReport(
+        commands=[
+            CommandOutcome(
+                command="pytest",
+                exit_code=0,
+                stdout="ok",
+                stderr="",
+                duration_seconds=0.1,
+            )
+        ]
+    )
+
+    unresolved = supervisor._todo_resolved(
+        entry,
+        plan=plan,
+        changed_paths=["tests/test_utils.py"],
+        validation_report=failing_report,
+    )
+    resolved = supervisor._todo_resolved(
+        entry,
+        plan=plan,
+        changed_paths=["tests/test_utils.py"],
+        validation_report=passing_report,
+    )
+
+    assert unresolved is False
+    assert resolved is True
