@@ -137,8 +137,6 @@ class SelfImprovementSupervisor:
         self._planning_strategy = self._select_planning_strategy()
 
         try:
-            # Introduce diversity by rotating planning strategies
-            self._planning_strategy = self._select_planning_strategy()
             dirty_sha = self._checkpoint_dirty_worktree("cycle-start")
             if dirty_sha:
                 LOGGER.warning("dirty worktree checkpointed at cycle start: %s", dirty_sha[:12])
