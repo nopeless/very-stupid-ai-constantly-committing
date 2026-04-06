@@ -45,3 +45,29 @@ class AdaptivePolicy:
             self.planner_temperature = max(0.08, self.planner_temperature - 0.03)
             self.coder_temperature = max(0.05, self.coder_temperature - 0.03)
             self.max_patch_bytes = max(16_000, self.max_patch_bytes - 3_000)
+
+    def _get_completed_objectives(self) -> set[str]:
+        """Return set of completed objective strings from history."""
+        history_path = Path(__file__).parent / "objective_history.json"
+        if not history_path.exists():
+            return set()
+        try:
+            return set(json.loads(history_path.read_text(encoding="utf-8")).get("objectives", []))
+        except (json.JSONDecodeError, KeyError):
+            return set()
+
+    def _record_objective(self, objective: str) -> None:
+        """Record an objective to history file."""
+        history_path = Path(__file__).parent / "objective_history.json"
+        history = self._get_completed_objectives()
+        history.add(objective)
+        history_path.parent.mkdir(parents=True, exist_ok=True)
+        history_path.write_text(json.dumps({"objectives": list(history)}, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    def mark_objective_complete(self, objective: str) -> None:
+        """Mark an objective as complete to prevent re-generation."""
+        self._record_objective(objective)
+
+    def get_objective_history(self) -> set[str]:
+        """Return set of completed objectives."""
+        return self._get_completed_objectives()
