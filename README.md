@@ -70,6 +70,12 @@ Manual background loop:
 Start-Process -FilePath "python" -ArgumentList "-m self_improver run --config config.json" -NoNewWindow
 ```
 
+Auto-start at boot (Windows Task Scheduler):
+
+```powershell
+.\install_autostart_task.ps1 -ConfigPath config.json
+```
+
 ## Notes
 
 - First run auto-initializes git if needed.
