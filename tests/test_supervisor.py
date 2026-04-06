@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from self_improver.config import RuntimeConfig
 from self_improver.supervisor import ImprovementPlan, SelfImprovementSupervisor
 from self_improver.todo import TodoEntry
@@ -131,3 +133,32 @@ def test_todo_resolved_requires_passing_validation(tmp_path: Path) -> None:
 
     assert unresolved is False
     assert resolved is True
+
+
+def test_checkpoint_dirty_worktree_creates_commit_when_enabled(tmp_path: Path) -> None:
+    supervisor = _make_supervisor(tmp_path)
+    supervisor.config.allow_dirty_worktree = False
+    supervisor.config.auto_commit_dirty_worktree = True
+
+    messages: list[str] = []
+    supervisor.repo.worktree_is_clean = lambda: False  # type: ignore[assignment]
+
+    def _commit_all(message: str) -> str:
+        messages.append(message)
+        return "abc123"
+
+    supervisor.repo.commit_all = _commit_all  # type: ignore[assignment]
+    sha = supervisor._checkpoint_dirty_worktree("bootstrap")
+
+    assert sha == "abc123"
+    assert messages == ["bot: dirty checkpoint (bootstrap)"]
+
+
+def test_checkpoint_dirty_worktree_raises_when_disabled_and_not_allowed(tmp_path: Path) -> None:
+    supervisor = _make_supervisor(tmp_path)
+    supervisor.config.allow_dirty_worktree = False
+    supervisor.config.auto_commit_dirty_worktree = False
+    supervisor.repo.worktree_is_clean = lambda: False  # type: ignore[assignment]
+
+    with pytest.raises(RuntimeError):
+        supervisor._checkpoint_dirty_worktree("cycle-start")

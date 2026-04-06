@@ -103,5 +103,5 @@ Auto-start at boot (Windows Task Scheduler):
 ## Notes
 
 - First run auto-initializes git if needed.
-- By default the bot refuses to run on a dirty working tree.
+- If the working tree is dirty, the bot auto-creates a checkpoint commit before autonomous work.
 - Logs are written to `.self_improver/logs/bot.log`.

@@ -73,10 +73,9 @@ class SelfImprovementSupervisor:
         if self.config.auto_init_git:
             self.repo.init_repo_if_needed()
             self.repo.ensure_initial_commit()
-        if not self.config.allow_dirty_worktree and not self.repo.worktree_is_clean():
-            raise RuntimeError(
-                "Worktree has uncommitted changes. Commit/stash them or set allow_dirty_worktree=true."
-            )
+        dirty_sha = self._checkpoint_dirty_worktree("bootstrap")
+        if dirty_sha:
+            LOGGER.warning("dirty worktree checkpointed at bootstrap: %s", dirty_sha[:12])
         LOGGER.info("bootstrap complete")
 
     def run_forever(self, max_cycles: int | None = None) -> None:
@@ -120,12 +119,9 @@ class SelfImprovementSupervisor:
         post_json: dict = {}
 
         try:
-            if not self.config.allow_dirty_worktree and not self.repo.worktree_is_clean():
-                raise RuntimeError("Worktree is dirty; refusing autonomous edits without allow_dirty_worktree=true.")
-
-            # Check for dirty worktree before starting autonomous edit cycle
-            if not self.config.allow_dirty_worktree and not self.repo.worktree_is_clean():
-                raise RuntimeError("Worktree is dirty; refusing autonomous edits without allow_dirty_worktree=true.")
+            dirty_sha = self._checkpoint_dirty_worktree("cycle-start")
+            if dirty_sha:
+                LOGGER.warning("dirty worktree checkpointed at cycle start: %s", dirty_sha[:12])
 
             ollama_ok, ollama_message = self.llm.health_check(
                 timeout_seconds=self.config.ollama_healthcheck_timeout_seconds
@@ -342,6 +338,26 @@ class SelfImprovementSupervisor:
             error_message=error_message,
         )
         self.memory.record_iteration(record)
+
+    def _checkpoint_dirty_worktree(self, phase: str) -> str:
+        if self.repo.worktree_is_clean():
+            return ""
+
+        if self.config.auto_commit_dirty_worktree:
+            commit_message = f"bot: dirty checkpoint ({phase})"
+            checkpoint_sha = self.repo.commit_all(commit_message)
+            if checkpoint_sha:
+                return checkpoint_sha
+            if self.repo.worktree_is_clean():
+                return ""
+            raise RuntimeError("Dirty worktree detected and automatic dirty checkpoint commit failed.")
+
+        if self.config.allow_dirty_worktree:
+            return ""
+
+        raise RuntimeError(
+            "Worktree has uncommitted changes. Enable auto_commit_dirty_worktree or set allow_dirty_worktree=true."
+        )
 
     def _write_cycle_artifact(
         self,

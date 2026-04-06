@@ -39,6 +39,7 @@ class RuntimeConfig:
     planner_context_bytes: int = 24_000
     target_file_context_bytes: int = 14_000
     allow_dirty_worktree: bool = False
+    auto_commit_dirty_worktree: bool = True
     auto_init_git: bool = True
     max_consecutive_failures_before_cooldown: int = 5
     cooldown_seconds: int = 60
