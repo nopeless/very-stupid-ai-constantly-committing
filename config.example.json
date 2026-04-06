@@ -21,7 +21,7 @@
   "planner_context_files": 40,
   "planner_context_bytes": 24000,
   "target_file_context_bytes": 14000,
-  "allow_dirty_worktree": false,
+  "allow_dirty_worktree": true,
   "auto_init_git": true,
   "max_consecutive_failures_before_cooldown": 10,
   "cooldown_seconds": 60,
