@@ -73,6 +73,8 @@ class AdaptivePolicy:
         self.unique_objectives_completed += 1
         self.success_streak += 1
         self.failure_streak = 0
+        # Log unique objective completion
+        LOGGER.info("unique objective completed: %s", objective)
 
     def get_objective_history(self) -> set[str]:
         """Return set of completed objectives."""

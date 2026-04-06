@@ -129,10 +129,17 @@ class SelfImprovementSupervisor:
         plan: ImprovementPlan | None = None
         baseline_json: dict = {}
         post_json: dict = {}
+        # Load completed objectives from policy to avoid duplicates
+        completed_objectives = self.policy.get_objective_history()
+        if objective in completed_objectives:
+            LOGGER.info("skipping duplicate objective: %s", objective)
+            objective = "unplanned"
 
         # Rotate planning strategy to avoid repeated objectives
         self._planning_strategy = self._select_planning_strategy()
-        self._diversity_cache.add(objective)
+        # Add objective to diversity cache
+        if objective not in self._diversity_cache:
+            self._diversity_cache.add(objective)
 
         try:
             dirty_sha = self._checkpoint_dirty_worktree("cycle-start")
@@ -164,6 +171,9 @@ class SelfImprovementSupervisor:
                 if self._is_duplicate_objective(objective, active_todo.text):
                     LOGGER.warning("duplicate objective detected: %s", active_todo.text)
                     active_todo = None
+                # Add objective to diversity cache if not already present
+                if objective not in self._diversity_cache:
+                    self._diversity_cache.add(objective)
 
             baseline_report = self.validator.run(self.config.validate_commands)
             baseline_json = baseline_report.to_json()
@@ -171,6 +181,9 @@ class SelfImprovementSupervisor:
 
             plan = self._plan_next_iteration(baseline_report, forced_todo=active_todo)
             objective = plan.objective
+            # Add new objective to diversity cache
+            if objective not in self._diversity_cache:
+                self._diversity_cache.add(objective)
 
             patch_text = ""
             selected_paths: list[str] = []
