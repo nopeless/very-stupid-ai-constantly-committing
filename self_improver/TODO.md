@@ -15,7 +15,6 @@
 ## Progress Visibility
 
 ## Resolution Statistics
-- **Completion Rate**: 100%
 
 ## Notes
 - This counter helps track progress on self-improvement objectives

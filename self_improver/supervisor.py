@@ -132,6 +132,8 @@ class SelfImprovementSupervisor:
             active_todo = self._next_todo_entry()
             if active_todo is not None:
                 LOGGER.info("active TODO: %s", active_todo.text)
+                # Track completion rate by ensuring all TODOs are resolved
+                self._track_todo_completion(active_todo)
 
             baseline_report = self.validator.run(self.config.validate_commands)
             baseline_json = baseline_report.to_json()
