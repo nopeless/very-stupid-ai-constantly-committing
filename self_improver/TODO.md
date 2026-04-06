@@ -18,4 +18,4 @@
 ## Resolution Statistics
 
 ## Notes
-- Update this file when completing new objectives
+- [x] [Add timestamp update mechanism to TODO.md]
