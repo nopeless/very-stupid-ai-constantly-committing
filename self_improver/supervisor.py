@@ -123,6 +123,10 @@ class SelfImprovementSupervisor:
             if not self.config.allow_dirty_worktree and not self.repo.worktree_is_clean():
                 raise RuntimeError("Worktree is dirty; refusing autonomous edits without allow_dirty_worktree=true.")
 
+            # Check for dirty worktree before starting autonomous edit cycle
+            if not self.repo.worktree_is_clean():
+                raise RuntimeError("Worktree is dirty; refusing autonomous edits")
+
             ollama_ok, ollama_message = self.llm.health_check(
                 timeout_seconds=self.config.ollama_healthcheck_timeout_seconds
             )
