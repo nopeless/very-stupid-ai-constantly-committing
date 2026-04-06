@@ -159,6 +159,9 @@ class PatchApplier:
             if not path or not isinstance(path, str):
                 return False, f"Changed path is invalid: {path}"
         
+        # Add randomization to patch application to avoid repeated objectives
+        import random
+        random.seed(time.time() + random.random())
         self._write_patch_file(diff_text)
         result: subprocess.CompletedProcess[str] | None = None
         for attempt in range(max_retries):
