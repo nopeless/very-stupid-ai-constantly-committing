@@ -39,3 +39,21 @@ index 1111111..2222222 100644
     result = guard.validate(diff)
     assert result.ok is False
     assert "outside allowlist" in result.message
+
+
+def test_patch_guard_uses_plus_plus_header_path() -> None:
+    guard = PatchGuard(
+        allowed_paths=["self_improver"],
+        max_patch_bytes=5_000,
+        max_patch_paths=3,
+        max_patch_hunks=10,
+    )
+    diff = """--- a/self_improver/x.py
++++ b/self_improver/x.py
+@@ -1 +1 @@
+-a
++b
+"""
+    result = guard.validate(diff)
+    assert result.ok is True
+    assert result.changed_paths == ["self_improver/x.py"]
