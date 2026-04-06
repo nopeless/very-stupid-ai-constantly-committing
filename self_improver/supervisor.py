@@ -153,6 +153,9 @@ class SelfImprovementSupervisor:
             # Periodically review completed items to prevent duplicate work
             self._review_completed_items()
 
+            # Resolve completed TODOs before generating new objectives
+            self._resolve_completed_todos()
+
             # Prevent duplicate objectives by checking for similar objectives
             if active_todo is not None:
                 if self._is_duplicate_objective(objective, active_todo.text):
