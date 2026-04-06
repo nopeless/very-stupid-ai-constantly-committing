@@ -1,7 +1,7 @@
 # TODO Resolution Counter
 
 ## Completed Objectives
-| 1 | [Add resolution counter to TODO.md] | ✅ | 2024-01-15 |
+| 1 | [Add resolution counter to TODO.md] | ✅ | 2024-01-15 | (1/1)
 | 2 | [Track completed objectives in TODO.md] | ✅ | 2024-01-15 |
 
 ## Pending Objectives
