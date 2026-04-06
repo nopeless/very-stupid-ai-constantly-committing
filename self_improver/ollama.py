@@ -38,6 +38,10 @@ class OllamaClient:
         json_mode: bool = False,
         retries: int = 3,
     ) -> str:
+        # Pre-cycle health check
+        healthy, msg = self.health_check()
+        if not healthy:
+            raise RuntimeError(f"Ollama health check failed before request: {msg}")
         opts = options or OllamaOptions()
         payload = {
             "model": self.model,
