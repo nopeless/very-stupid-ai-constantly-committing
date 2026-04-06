@@ -81,14 +81,14 @@ class SelfImprovementSupervisor:
         consecutive_failures = 0
         while max_cycles is None or cycle < max_cycles:
             cycle += 1
-            LOGGER.info("starting cycle %d", cycle)
+            LOGGER.info("starting cycle %d", cycle, objective=objective)
             result = self.run_cycle()
             if result.success:
                 consecutive_failures = 0
-                LOGGER.info("cycle %d succeeded: %s", cycle, result.message)
+                LOGGER.info("cycle %d succeeded: %s", cycle, result.message, objective=objective)
             else:
                 consecutive_failures += 1
-                LOGGER.warning("cycle %d failed: %s", cycle, result.message)
+                LOGGER.warning("cycle %d failed: %s", cycle, result.message, objective=objective)
 
             self.policy.save(self.config.policy_path)
 
@@ -140,7 +140,7 @@ class SelfImprovementSupervisor:
                     if self._is_hard_reject_reason(review.reason):
                         last_patch_error = f"supervisor rejected patch: {review.reason}"
                         continue
-                    LOGGER.warning("review soft-reject ignored: %s", review.reason)
+                    LOGGER.warning("review soft-reject ignored: %s", review.reason, objective=objective)
 
                 patch_check_ok, patch_check_error = self.patch_applier.check(candidate_patch)
                 if not patch_check_ok:
@@ -352,7 +352,7 @@ class SelfImprovementSupervisor:
             except Exception as exc:  # noqa: BLE001
                 last_error = str(exc)
         if not payload:
-            LOGGER.warning("planner fallback activated: %s", last_error)
+            LOGGER.warning("planner fallback activated: %s", last_error, objective=objective)
             payload = {
                 "objective": "Increase robustness of prompt parsing and retry logic",
                 "rationale": "Planner output was malformed; improve resilience for perpetual cycles.",
