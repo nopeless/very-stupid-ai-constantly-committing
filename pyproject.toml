@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "self-improver-bot"
+version = "0.1.0"
+description = "Autonomous self-improving software bot supervised by validation gates."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
