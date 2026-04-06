@@ -97,6 +97,13 @@ class TodoQueue:
         self._write_lines(lines)
         self._counter += 1
         self._save_counter()
+        
+        # Extract and track the objective text for completion rate tracking
+        objective = entry.text
+        if objective:
+            self._completed_objectives.add(objective)
+            self._save_objectives(self._completed_objectives)
+        
         return True
 
     @staticmethod
