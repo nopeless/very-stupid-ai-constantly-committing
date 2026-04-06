@@ -143,6 +143,19 @@ class PatchApplier:
             return False, "Patch text must be a non-empty string."
         if len(diff_text) > 1_048_576:
             return False, "Patch text exceeds maximum allowed size (1MB)."
+        
+        # Validate patch before applying
+        guard = PatchGuard(
+            allowed_paths=["self_improver/"],
+            max_patch_bytes=1_048_576,
+            max_patch_paths=10,
+            max_patch_hunks=100,
+        )
+        validation = guard.validate(diff_text)
+        if not validation.ok:
+            return False, validation.message
+        
+        self._write_patch_file(diff_text)
 
         self._write_patch_file(diff_text)
         result: subprocess.CompletedProcess[str] | None = None
