@@ -162,3 +162,15 @@ def test_checkpoint_dirty_worktree_raises_when_disabled_and_not_allowed(tmp_path
 
     with pytest.raises(RuntimeError):
         supervisor._checkpoint_dirty_worktree("cycle-start")
+
+
+def test_run_cycle_handles_healthcheck_failure_without_crashing(tmp_path: Path) -> None:
+    supervisor = _make_supervisor(tmp_path)
+    supervisor.config.auto_commit_dirty_worktree = False
+    supervisor.config.allow_dirty_worktree = True
+    supervisor.llm.health_check = lambda timeout_seconds: (False, "offline")  # type: ignore[assignment]
+
+    result = supervisor.run_cycle()
+
+    assert result.success is False
+    assert "ollama health check failed" in result.message

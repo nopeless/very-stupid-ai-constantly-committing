@@ -117,29 +117,6 @@ class SelfImprovementSupervisor:
         plan: ImprovementPlan | None = None
         baseline_json: dict = {}
         post_json: dict = {}
-        # Initialize diversity tracking
-        self._diversity_cache = set()
-        started_at = utc_now()
-        objective = "unplanned"
-        commit_sha = ""
-        patch_sha256 = ""
-        score_before = 0.0
-        score_after = 0.0
-        active_todo: TodoEntry | None = None
-        plan: ImprovementPlan | None = None
-        baseline_json: dict = {}
-        post_json: dict = {}
-        # Load completed objectives from policy to avoid duplicates
-        completed_objectives = self.policy.get_objective_history()
-        if objective in completed_objectives:
-            LOGGER.info("skipping duplicate objective: %s", objective)
-            objective = "unplanned"
-
-        # Rotate planning strategy to avoid repeated objectives
-        self._planning_strategy = self._select_planning_strategy()
-        # Add objective to diversity cache
-        if objective not in self._diversity_cache:
-            self._diversity_cache.add(objective)
 
         try:
             dirty_sha = self._checkpoint_dirty_worktree("cycle-start")
@@ -155,25 +132,8 @@ class SelfImprovementSupervisor:
             active_todo = self._next_todo_entry()
             if active_todo is not None:
                 LOGGER.info("active TODO: %s", active_todo.text)
-                # Track completion rate by ensuring all TODOs are resolved
-                self._track_todo_completion(active_todo)
             else:
                 LOGGER.info("no active TODO found")
-
-            # Periodically review completed items to prevent duplicate work
-            self._review_completed_items()
-
-            # Resolve completed TODOs before generating new objectives
-            self._resolve_completed_todos()
-
-            # Prevent duplicate objectives by checking for similar objectives
-            if active_todo is not None:
-                if self._is_duplicate_objective(objective, active_todo.text):
-                    LOGGER.warning("duplicate objective detected: %s", active_todo.text)
-                    active_todo = None
-                # Add objective to diversity cache if not already present
-                if objective not in self._diversity_cache:
-                    self._diversity_cache.add(objective)
 
             baseline_report = self.validator.run(self.config.validate_commands)
             baseline_json = baseline_report.to_json()
@@ -181,9 +141,6 @@ class SelfImprovementSupervisor:
 
             plan = self._plan_next_iteration(baseline_report, forced_todo=active_todo)
             objective = plan.objective
-            # Add new objective to diversity cache
-            if objective not in self._diversity_cache:
-                self._diversity_cache.add(objective)
 
             patch_text = ""
             selected_paths: list[str] = []
