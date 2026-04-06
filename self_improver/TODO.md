@@ -8,7 +8,7 @@
 - [x] [Help prioritize remaining TODOs]
 
 ## Pending Objectives
-- [ ] [Make sure to git push after every commit]
+- [x] [Make sure to git push after every commit]
 
 ## Progress Visibility
 - **Active Objectives**: 0
