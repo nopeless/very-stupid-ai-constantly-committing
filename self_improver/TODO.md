@@ -8,10 +8,9 @@
 - [x] [Help prioritize remaining TODOs]
 
 ## Pending Objectives
-- [x] [Make sure to git push after every commit]
+- [ ] [Make sure to git push after every commit]
 
 ## Progress Visibility
-- **Active Objectives**: 0
 - **Last Updated**: 2024-01-15
 
 ## Resolution Statistics
