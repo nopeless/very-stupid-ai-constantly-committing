@@ -135,6 +135,9 @@ class SelfImprovementSupervisor:
                 # Track completion rate by ensuring all TODOs are resolved
                 self._track_todo_completion(active_todo)
 
+            # Periodically review completed items to prevent duplicate work
+            self._review_completed_items()
+
             baseline_report = self.validator.run(self.config.validate_commands)
             baseline_json = baseline_report.to_json()
             score_before = baseline_report.score

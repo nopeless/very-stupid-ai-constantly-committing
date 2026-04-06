@@ -18,5 +18,4 @@
 ## Resolution Statistics
 
 ## Notes
-- Review completed items periodically to prevent duplicate work
 - Update this file when completing new objectives
