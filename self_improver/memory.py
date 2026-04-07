@@ -178,6 +178,13 @@ class MemoryStore:
         # Append iteration count to make it unique
         return f"{objective} (iteration)"
 
+    def get_unique_objective(self, objective: str, window: int = 10) -> str:
+        """Generate a unique objective by appending iteration count if repeated."""
+        if not self.has_repeated_objective(objective, window):
+            return objective
+        # Append iteration count to make it unique
+        return f"{objective} (iteration)"
+
     def stats(self) -> dict[str, int]:
         with self._connect() as conn:
             total = conn.execute("SELECT COUNT(*) FROM iterations").fetchone()[0]
